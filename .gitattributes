@@ -1,0 +1,3 @@
+# Godot expects LF line endings
+* text=auto eol=lf
+*.png binary

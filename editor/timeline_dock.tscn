@@ -1,0 +1,206 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/construction_4d_tool/editor/timeline_dock.gd" id="1_dock"]
+
+[node name="TimelineDock" type="Control"]
+custom_minimum_size = Vector2(340, 0)
+script = ExtResource("1_dock")
+
+[node name="VBox" type="VBoxContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TargetLabel" type="Label" parent="VBox"]
+layout_mode = 2
+autowrap_mode = 2
+text = "No SequenceManager found in the open scene."
+
+[node name="Buttons" type="HFlowContainer" parent="VBox"]
+layout_mode = 2
+
+[node name="StartButton" type="Button" parent="VBox/Buttons"]
+layout_mode = 2
+disabled = true
+text = "Start Preview"
+
+[node name="StopButton" type="Button" parent="VBox/Buttons"]
+layout_mode = 2
+disabled = true
+text = "Stop Preview"
+
+[node name="WarningLabel" type="Label" parent="VBox"]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.3, 0.3, 1)
+autowrap_mode = 2
+text = "⚠ Live preview active — do not save the scene until you press Stop Preview."
+
+[node name="UIContainer" type="Control" parent="VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 90)
+
+[node name="PourBar" type="HFlowContainer" parent="VBox"]
+layout_mode = 2
+
+[node name="PourCheck" type="CheckBox" parent="VBox/PourBar"]
+layout_mode = 2
+text = "Vertido (chorro de hormigón)"
+
+[node name="PourGrid" type="GridContainer" parent="VBox"]
+layout_mode = 2
+columns = 4
+theme_override_constants/h_separation = 6
+
+[node name="LblAmount" type="Label" parent="VBox/PourGrid"]
+layout_mode = 2
+text = "Cantidad"
+
+[node name="Amount" type="SpinBox" parent="VBox/PourGrid"]
+layout_mode = 2
+min_value = 1
+max_value = 20000
+step = 10
+value = 800
+
+[node name="LblGrain" type="Label" parent="VBox/PourGrid"]
+layout_mode = 2
+text = "Grano (m)"
+
+[node name="Grain" type="SpinBox" parent="VBox/PourGrid"]
+layout_mode = 2
+min_value = 0
+max_value = 5
+step = 0.01
+value = 0
+
+[node name="LblSpread" type="Label" parent="VBox/PourGrid"]
+layout_mode = 2
+text = "Ángulo (°)"
+
+[node name="Spread" type="SpinBox" parent="VBox/PourGrid"]
+layout_mode = 2
+min_value = 0
+max_value = 90
+step = 0.5
+value = 8
+
+[node name="LblSpeed" type="Label" parent="VBox/PourGrid"]
+layout_mode = 2
+text = "Velocidad"
+
+[node name="Speed" type="SpinBox" parent="VBox/PourGrid"]
+layout_mode = 2
+min_value = 0
+max_value = 100
+step = 0.1
+value = 2
+
+[node name="LblFall" type="Label" parent="VBox/PourGrid"]
+layout_mode = 2
+text = "Altura caída (m)"
+
+[node name="Fall" type="SpinBox" parent="VBox/PourGrid"]
+layout_mode = 2
+min_value = 0
+max_value = 100
+step = 0.25
+value = 0
+
+[node name="LblSplash" type="Label" parent="VBox/PourGrid"]
+layout_mode = 2
+text = "Salpicadura"
+
+[node name="Splash" type="SpinBox" parent="VBox/PourGrid"]
+layout_mode = 2
+min_value = 0
+max_value = 20000
+step = 10
+value = 220
+
+[node name="InspectorLabel" type="Label" parent="VBox"]
+layout_mode = 2
+text = "Schedule Inspector"
+
+[node name="FormworkBar" type="HFlowContainer" parent="VBox"]
+layout_mode = 2
+
+[node name="FormworkCheck" type="CheckBox" parent="VBox/FormworkBar"]
+layout_mode = 2
+text = "Encofrado en todo el proyecto"
+
+[node name="FormworkPourLabel" type="Label" parent="VBox/FormworkBar"]
+layout_mode = 2
+text = "Días vertido:"
+
+[node name="FormworkPourSpin" type="SpinBox" parent="VBox/FormworkBar"]
+layout_mode = 2
+min_value = 0.25
+max_value = 9999.0
+step = 0.25
+value = 1.0
+
+[node name="InspectorScroll" type="ScrollContainer" parent="VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+custom_minimum_size = Vector2(0, 200)
+horizontal_scroll_mode = 1
+
+[node name="InspectorList" type="GridContainer" parent="VBox/InspectorScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 15
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 4
+
+[node name="DirtyLabel" type="Label" parent="VBox"]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.8, 0.2, 1)
+autowrap_mode = 2
+text = "⚠ Schedule out of date — click Recalculate to update the 3D preview and dates."
+
+[node name="InspectorButtons" type="HFlowContainer" parent="VBox"]
+layout_mode = 2
+
+[node name="RecalculateButton" type="Button" parent="VBox/InspectorButtons"]
+layout_mode = 2
+disabled = true
+text = "Recalculate"
+
+[node name="ReloadButton" type="Button" parent="VBox/InspectorButtons"]
+layout_mode = 2
+disabled = true
+text = "Reload from JSON"
+
+[node name="SaveButton" type="Button" parent="VBox/InspectorButtons"]
+layout_mode = 2
+disabled = true
+text = "Save to JSON"
+
+[node name="CaptureCameraButton" type="Button" parent="VBox/InspectorButtons"]
+layout_mode = 2
+disabled = true
+text = "Capturar cámara"
+
+[node name="ExportCsvButton" type="Button" parent="VBox/InspectorButtons"]
+layout_mode = 2
+disabled = true
+text = "Export CSV"
+
+[node name="ImportCsvButton" type="Button" parent="VBox/InspectorButtons"]
+layout_mode = 2
+disabled = true
+text = "Import CSV"
+
+[node name="ExportProjectXmlButton" type="Button" parent="VBox/InspectorButtons"]
+layout_mode = 2
+disabled = true
+text = "Export Project XML"
+
+[node name="ImportProjectXmlButton" type="Button" parent="VBox/InspectorButtons"]
+layout_mode = 2
+disabled = true
+text = "Import Project XML"

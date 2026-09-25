@@ -1,0 +1,99 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://addons/construction_4d_tool/runtime/sequence_manager.gd" id="1_seq"]
+[ext_resource type="Script" path="res://addons/construction_4d_tool/runtime/free_look_camera.gd" id="2_cam"]
+
+[sub_resource type="BoxMesh" id="unit_box"]
+size = Vector3(1, 1, 1)
+
+[sub_resource type="StandardMaterial3D" id="mat_0"]
+albedo_color = Color(0.55, 0.55, 0.55, 1)
+
+[sub_resource type="StandardMaterial3D" id="mat_1"]
+albedo_color = Color(0.75, 0.75, 0.72, 1)
+
+[sub_resource type="StandardMaterial3D" id="mat_2"]
+albedo_color = Color(0.75, 0.75, 0.72, 1)
+
+[sub_resource type="StandardMaterial3D" id="mat_3"]
+albedo_color = Color(0.75, 0.75, 0.72, 1)
+
+[sub_resource type="StandardMaterial3D" id="mat_4"]
+albedo_color = Color(0.75, 0.75, 0.72, 1)
+
+[sub_resource type="StandardMaterial3D" id="mat_5"]
+albedo_color = Color(0.65, 0.65, 0.68, 1)
+
+[sub_resource type="StandardMaterial3D" id="mat_6"]
+albedo_color = Color(0.85, 0.8, 0.7, 1)
+
+[sub_resource type="StandardMaterial3D" id="mat_7"]
+albedo_color = Color(0.85, 0.8, 0.7, 1)
+
+[sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("sky")
+
+
+[node name="Demo" type="Node3D"]
+script = ExtResource("1_seq")
+construction_json_path = "res://addons/construction_4d_tool/examples/demo_steps.json"
+parts_container_path = NodePath("Parts")
+
+[node name="Parts" type="Node3D" parent="."]
+
+[node name="Found_1" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(8, 0, 0, 0, 0.5, 0, 0, 0, 6, 0, 0.25, 0)
+mesh = SubResource("unit_box")
+surface_material_override/0 = SubResource("mat_0")
+
+[node name="Col_1" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.6, 0, 0, 0, 3.0, 0, 0, 0, 0.6, -3, 2.0, -2)
+mesh = SubResource("unit_box")
+surface_material_override/0 = SubResource("mat_1")
+
+[node name="Col_2" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.6, 0, 0, 0, 3.0, 0, 0, 0, 0.6, 3, 2.0, -2)
+mesh = SubResource("unit_box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="Col_3" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.6, 0, 0, 0, 3.0, 0, 0, 0, 0.6, -3, 2.0, 2)
+mesh = SubResource("unit_box")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="Col_4" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.6, 0, 0, 0, 3.0, 0, 0, 0, 0.6, 3, 2.0, 2)
+mesh = SubResource("unit_box")
+surface_material_override/0 = SubResource("mat_4")
+
+[node name="Slab_1" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(8, 0, 0, 0, 0.5, 0, 0, 0, 6, 0, 3.75, 0)
+mesh = SubResource("unit_box")
+surface_material_override/0 = SubResource("mat_5")
+
+[node name="Wall_1" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(6, 0, 0, 0, 3.0, 0, 0, 0, 0.2, 0, 2.0, -2.9)
+mesh = SubResource("unit_box")
+surface_material_override/0 = SubResource("mat_6")
+
+[node name="Wall_2" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(6, 0, 0, 0, 3.0, 0, 0, 0, 0.2, 0, 2.0, 2.9)
+mesh = SubResource("unit_box")
+surface_material_override/0 = SubResource("mat_7")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.8, -0.4, 0.45, 0, 0.75, 0.66, -0.6, -0.53, 0.6, 0, 10, 0)
+shadow_enabled = true
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(0.94, -0.12, 0.31, 0, 0.93, 0.36, -0.33, -0.34, 0.88, 9, 7, 11)
+script = ExtResource("2_cam")

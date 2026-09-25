@@ -1,0 +1,100 @@
+# IFC Integration
+
+Drive the 4D timeline from an IFC model instead of hand-authoring `construction_steps.json`.
+
+IFC files have no standard place for a construction schedule, so every company stores it
+differently: different property sets, different property names, different languages, different
+date conventions. **This plugin therefore knows no property names.** You look at the properties
+*your* model carries and choose which one means what.
+
+## Requirements
+
+- The **GDIFC** addon (a third-party GDExtension that reads IFC into Godot nodes), installed and
+  enabled. It is *not* bundled here. Everything else in this plugin works without it.
+- Property values that carry dates must be **ISO** (`YYYY-MM-DD`, an optional time part is ignored).
+  Other formats are rejected because day/month order is ambiguous.
+
+## Workflow (editor dock)
+
+1. Open the scene that will hold the model and make sure it contains a `SequenceManager` node.
+2. **Load IFC (4D)** and pick the file.
+3. The tool reads the model and **scans every property its parts carry**. The mapping dialog opens.
+4. Choose, per role (see below). Each entry shows the property path, how many parts carry it, and
+   sample values.
+5. Confirm. The parts are imported into an `IFCParts` node under `SequenceManager`, and
+   `parts_container_path` is pointed at it. Save the scene to keep them.
+6. **Generate 4D Schedule** writes `construction_steps.json` from your mapping.
+7. Start Preview and scrub.
+
+**Edit IFC mapping** reopens the dialog later. Because parts were already named from the Element ID,
+that one role is locked; re-import the model to change it.
+
+## The mapping roles
+
+| Role | Required | Meaning |
+|---|---|---|
+| Element ID | yes | Each part is named after this value, and it becomes the action's `id` and `target_prefix`. Parts sharing a value form **one action**. |
+| Start date | yes | The action's `start_date`. |
+| End date **or** Duration (days) | one of them | Window end, or its length (a duration counts calendar days, inclusive of the start). |
+| Display name | no | Written into the action's `comment`. |
+| Decide type from | no | The property the type rules below are matched against. |
+| Default type | — | Animation type for an action no rule matches (`scale_up` unless you change it). |
+| Type rules | no | Ordered "value contains *text* → *type*"; the first match wins, case-insensitive. |
+| Ignore dates equal to | no | Placeholder dates a model uses for "not scheduled". Empty unless you add some. |
+
+Properties are addressed by their **exact path** (`property set / property`), never by suffix, so
+two property sets that share a property name cannot be confused.
+
+The choice is saved next to your schedule as `<schedule name>.ifc_profile.json` and reused
+silently on later imports, as long as every property it refers to still exists in the model.
+Otherwise the dialog reopens.
+
+## What the import does to the geometry
+
+GDIFC leaves every part's placement baked into its vertex data with its node at the origin, which
+breaks the scaling and positioning the timeline relies on. `GDIFC4DAdapter` therefore:
+
+- moves each part's placement out of the mesh and into the node's own transform, without changing
+  where anything renders;
+- flattens GDIFC's nested tree into one container of named `MeshInstance3D` parts;
+- names parts from the Element ID; a part with no value keeps a name built from its structural
+  zone (`<zone>_<original name>`), so it still renders and collides but cannot be scheduled;
+- removes GDIFC's own collision helper nodes (the tool builds its own collision shapes).
+
+`GDIFCRecenter` first strips very large georeferenced offsets from the file, because GDIFC stores
+coordinates at float32 precision and models placed at survey coordinates jitter and z-fight
+otherwise.
+
+## What Generate 4D Schedule produces
+
+- **One action per distinct Element ID**, sorted by start date, `target_prefix` = the id.
+- If parts sharing an id have different dates, the action spans the **widest window**.
+- `duration_days` is an inclusive calendar-day span.
+- **Parts with no Element ID or no usable date** become `static_prefixes` entries (by structural
+  zone): they render from the first frame and never animate. Without this they would stay hidden
+  for the whole run.
+- `batch` is written explicitly: `true` for every type except `install` and `drop_in` (discrete
+  units placed one after another). One id covering several meshes normally means one operation
+  split for modelling convenience.
+- `excluded_prefixes` and `static_prefixes` you added by hand are **carried forward** across
+  regeneration.
+
+### Your corrections survive regeneration
+
+An action's `type` and `batch` are derived from your rules, but you can then correct them in the
+inspector. Regeneration must not undo that. The mapping file remembers what it derived last time
+(`last_generated`), so:
+
+- if the value in the JSON still equals what was derived last time, you never touched it and the
+  freshly derived value is used (so editing your rules takes effect);
+- if it differs, you changed it, and your value is kept.
+
+To force an action to be re-derived, delete it from the JSON before regenerating.
+
+## Limitations
+
+- IFC dates must be ISO.
+- GDIFC must be present to import. A schedule generated earlier keeps working without it.
+- The Element ID cannot be changed after import without re-importing.
+- Property values are read as GDIFC exposes them (its `properties` dictionary). Properties GDIFC
+  does not surface are not visible to the tool.

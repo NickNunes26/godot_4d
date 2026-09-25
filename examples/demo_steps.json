@@ -1,0 +1,45 @@
+{
+	"steps": [
+		{
+			"actions": [
+				{
+					"id": "Foundation",
+					"target_prefix": "Found_",
+					"type": "fill_up",
+					"start_date": "2026-01-05",
+					"duration_days": 3,
+					"comment": "fill_up = concrete pour. formwork:{} adds generic wood forms before the pour.",
+					"formwork": {
+						"pour_days": 2
+					}
+				},
+				{
+					"id": "Columns",
+					"target_prefix": "Col_",
+					"type": "rise_up",
+					"depends_on": "Foundation",
+					"lag_days": 1,
+					"units_per_day": 2,
+					"comment": "depends_on + lag_days: starts 1 day after Foundation finishes. units_per_day derives duration_days."
+				},
+				{
+					"id": "Slab",
+					"target_prefix": "Slab_",
+					"type": "drop_in",
+					"depends_on": "Columns",
+					"duration_days": 2,
+					"comment": "No start_date: it is resolved from the dependency."
+				},
+				{
+					"id": "Walls",
+					"target_prefix": "Wall_",
+					"type": "fade_in",
+					"depends_on": "Slab",
+					"duration_days": 2,
+					"batch": true,
+					"comment": "batch:true moves every matching part together instead of one after another."
+				}
+			]
+		}
+	]
+}
