@@ -21,13 +21,34 @@ date conventions. **This plugin therefore knows no property names.** You look at
 3. The tool reads the model and **scans every property its parts carry**. The mapping dialog opens.
 4. Choose, per role (see below). Each entry shows the property path, how many parts carry it, and
    sample values.
-5. Confirm. The parts are imported into an `IFCParts` node under `SequenceManager`, and
+5. Confirm. The parts are imported into an `IFCParts_<file>` node under `SequenceManager`, and
    `parts_container_path` is pointed at it. Save the scene to keep them.
 6. **Generate 4D Schedule** writes `construction_steps.json` from your mapping.
 7. Start Preview and scrub.
 
 **Edit IFC mapping** reopens the dialog later. Because parts were already named from the Element ID,
 that one role is locked; re-import the model to change it.
+
+### Several models in one scene
+
+A project often comes as several files (the two carriageways of a bridge, structure and
+earthworks). Load each one with **Load IFC (4D)** into the same scene (`IfcSceneModels`):
+
+- The first model is the **primary**: `parts_container_path` points at it and its origin becomes
+  `SequenceManager.geo_origin`.
+- Each later model gets its own `IFCParts_<file>` container, appended to `extra_part_containers`,
+  and is **placed by its georeference relative to the first**: the container's transform is the
+  offset (and any rotation/scale difference) between the two files' map positions. The scene's
+  origin is kept, and so is the terrain when it already covers the new model.
+- Loading a file again (same file name) **replaces** that model's container in place.
+- A model with no georeference, or on another UTM zone, cannot be placed: it goes at the first
+  model's origin and the Output says so; move it by hand.
+- Part names must be unique across models (the timeline registers parts by name). A name another
+  model already uses gets a suffix (`_2`, `_3`…), with a warning.
+- **Generate 4D Schedule**, the position check and the preview see every model.
+
+Every model keeps small coordinates of its own (each is still centred on load), so nothing reaches
+float32 at map magnitude.
 
 ## The mapping roles
 
@@ -61,9 +82,17 @@ breaks the scaling and positioning the timeline relies on. `GDIFC4DAdapter` ther
   zone (`<zone>_<original name>`), so it still renders and collides but cannot be scheduled;
 - removes GDIFC's own collision helper nodes (the tool builds its own collision shapes).
 
-`GDIFCRecenter` first strips very large georeferenced offsets from the file, because GDIFC stores
-coordinates at float32 precision and models placed at survey coordinates jitter and z-fight
-otherwise.
+`GDIFCRecenter` first strips a very large offset in the root placement from a copy of the file,
+because GDIFC stores coordinates at float32 precision and models placed at survey coordinates
+jitter and z-fight otherwise (files with CRLF line endings included). An offset held in
+`IfcMapConversion` is only read, not stripped: GDIFC ignores the map conversion, so such a file
+loads as-is with no copy. What is found is recorded, together with the framing shift the import applies, as
+`SequenceManager.geo_origin` — the model's position on the map, used by the terrain and the sun
+(`10_TERRAIN.md`).
+
+GDIFC's axes (verified on Godot 4.6.2): IFC (x = east, y = north, z = up) arrives as Godot
+(x, z, -y), i.e. east = +X, up = +Y, north = -Z. GDIFC ignores `IfcMapConversion`, and its
+`coordinate_to_origin` setting had no effect in the build tested; the dock sets it off regardless.
 
 ## What Generate 4D Schedule produces
 

@@ -82,6 +82,11 @@ func scrub_to(target_day: float, retract_crane: bool = true) -> void:
 		var state = states[part_name]
 		AnimationApplier.apply_instant(part, state.anim_type, state.progress)
 
+	# Any GeoSun in the scene follows the calendar date (it ignores repeats of
+	# the same day, so calling this every Play frame costs nothing).
+	if _schedule.has_calendar_dates() and is_inside_tree():
+		GeoSun.update_all(get_tree(), _schedule.day_to_epoch(current_day))
+
 	if retract_crane:
 		for crane in _cranes.values():
 			crane.retract()

@@ -24,7 +24,8 @@ const _STAGGERED_TYPES: Array = ["install", "drop_in"]
 ## Returns a `{"steps": [...], "static_prefixes": [...], "excluded_prefixes":
 ## [...]}` Dictionary ready to be written as construction_steps.json, or {}
 ## (with an error logged) when `mapping` is missing a required role.
-## `parts_container` is the flat container the adapter produced.
+## `parts` is the flat container the adapter produced, or an Array of parts
+## (SequenceManager.collect_part_nodes(): every model in the scene).
 ##
 ## `existing` is the previously-parsed contents of the file about to be
 ## overwritten (read_existing()). Generation is wholesale, so anything
@@ -35,7 +36,7 @@ const _STAGGERED_TYPES: Array = ["install", "drop_in"]
 ##     _resolve_type_and_batch().
 ##
 ## Mutates `mapping.last_generated`; the caller should save the mapping again.
-static func generate(parts_container: Node, mapping: IfcMapping, existing: Dictionary = {}) -> Dictionary:
+static func generate(parts: Variant, mapping: IfcMapping, existing: Dictionary = {}) -> Dictionary:
 	if mapping == null or not mapping.is_valid():
 		push_error("IFCScheduleGenerator: mapping incomplete (missing: %s)" % ", ".join(mapping.missing_roles() if mapping else ["everything"]))
 		return {}
@@ -47,7 +48,8 @@ static func generate(parts_container: Node, mapping: IfcMapping, existing: Dicti
 	var carried_static: Array = _carry_forward(existing, "static_prefixes")
 	var existing_actions := _actions_by_id(existing)
 
-	for part in parts_container.get_children():
+	var part_nodes: Array = parts.get_children() if parts is Node else parts
+	for part in part_nodes:
 		# Excluded geometry is dropped here rather than at load time, so it
 		# produces neither an action nor a static entry even when it carries a
 		# perfectly good id and dates. That is the point of the list: "this

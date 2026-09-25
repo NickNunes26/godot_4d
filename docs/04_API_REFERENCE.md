@@ -24,6 +24,8 @@ Quick reference for all public APIs in the 4D Construction Tool. For implementat
 - [CameraTrack](#cameratrack) *(feature 5, new)*
 - [CameraDriver](#cameradriver) *(feature 5, new)*
 - [Editor-side classes](#editor-side-classes) *(Phase 3)*
+- [Georeference classes](#georeference-classes-geo) *(0.5.0)*
+- [Terrain classes](#terrain-classes-terrain) *(0.5.0)*
 - [Data Types](#data-types)
 
 ---
@@ -1027,12 +1029,16 @@ The user's choice of which IFC properties mean what. A property path is an `Arra
   `kind` is `"date"`, `"number"` or `"text"`; sorted by coverage.
 
 ### `GDIFC4DAdapter` (`RefCounted`)
-- `static adapt(ifc_root: Node, mapping: IfcMapping = null) -> Node3D` — flat container of named parts
-  (named from the Element ID; fallback `<zone>_<name>`), placement moved into node transforms.
+- `static adapt(ifc_root: Node, mapping: IfcMapping = null, taken_names: Dictionary = {}) -> Node3D` —
+  flat container of named parts (named from the Element ID; fallback `<zone>_<name>`), placement
+  moved into node transforms. A name in `taken_names` (other models' parts,
+  `IfcSceneModels.taken_part_names()`) gets a `_2`, `_3`… suffix, with a warning.
 - `static get_property_sets(leaf: MeshInstance3D) -> Dictionary`
 
 ### `IFCScheduleGenerator` (`RefCounted`)
-- `static generate(parts_container: Node, mapping: IfcMapping, existing: Dictionary = {}) -> Dictionary` —
+- `static generate(parts: Variant, mapping: IfcMapping, existing: Dictionary = {}) -> Dictionary` — `parts`
+  is a container (its children) or an Array of parts (the dock passes
+  `SequenceManager.collect_part_nodes()`, i.e. every model). Returns
   a `{steps, static_prefixes, excluded_prefixes}` schedule, or `{}` with an error if the mapping is
   incomplete. Carries forward the two prefix lists and any hand-edited `type`/`batch`. Updates
   `mapping.last_generated`; save the mapping afterwards.
@@ -1042,8 +1048,136 @@ The user's choice of which IFC properties mean what. A property path is an `Arra
 - `setup(scan: Dictionary, initial: IfcMapping, lock_element_id := false)`; signal
   `mapping_confirmed(mapping: IfcMapping)`. OK stays disabled until the required roles are chosen.
 
+### `IfcSceneModels` (`RefCounted`, static)
+Several models in one scene (`05_IFC_INTEGRATION.md`). Keeps `geo_origin` describing the primary
+container's origin; other models' containers are siblings in `extra_part_containers`.
+- `const SOURCE_META := "ifc_source_file"` — meta on each container: the file it came from.
+- `containers(sm) -> Array[Node3D]` — primary first, then extras (missing paths skipped).
+- `taken_part_names(sm, source_file) -> Dictionary` — part names of the other models.
+- `attach(sm, container, fresh: GeoOrigin, source_file) -> {role, replaced, placement, geo_changed, message}` —
+  names the container `IFCParts_<file>`, places it (`placement`: `"first"`, `"map"` by the
+  georeference, or `"unplaced"` with a `message`), replaces an earlier import of the same file in
+  its slot, registers it (`role`: `"primary"` or `"extra"`) and updates `geo_origin` only when the
+  primary is (re)placed by a georeferenced model or the scene had no position yet.
+
 ### `SequenceManager` additions
 - `extra_part_containers: Array[NodePath]`, `collect_part_nodes() -> Array`.
+- `geo_origin: GeoOrigin` — where the parts container's origin is on the map; set by Load IFC (4D).
+
+### `GDIFCRecenter` (`RefCounted`)
+- `static recenter(ifc_path) -> String` — path of a copy with a large root-placement offset stripped
+  (or the input: also when the only offset is in `IfcMapConversion`, which GDIFC ignores). CRLF-safe.
+- `static recenter_with_info(ifc_path) -> Dictionary` — `{path, root_offset: PackedFloat64Array,
+  map_conversion: Dictionary, crs_name: String, crs_zone: int}`.
+
+---
+
+## Georeference classes (`geo/`)
+
+See `10_TERRAIN.md`. All coordinates are 64-bit `float`; nothing at map magnitude is ever a `Vector3`.
+
+### `Utm` (`RefCounted`, static)
+- `to_geo(easting, northing, zone, south := false) -> {lat, lon}`,
+  `from_geo(lat, lon, zone) -> {easting, northing}` — GRS80, sub-millimetre round trip.
+- `zone_for_lon(lon) -> int`, `central_meridian(zone) -> float`,
+  `zone_from_crs_text(text) -> int` (`"EPSG:25830"` → 30, `"30N"` → 30, none → 0).
+
+### `IfcGeoref` (`RefCounted`, static)
+- `read(step_text) -> {map_conversion: {} | {e, n, h, abscissa, ordinate, scale}, crs_name, crs_zone, root_points: [{id, coords}]}`
+- `root_placement_points(text) -> Array`, `split_args(s) -> PackedStringArray`, `parse_float_list(s) -> PackedFloat64Array`
+
+### `GeoOrigin` (`Resource`)
+- Exported: `easting`, `northing`, `height`, `rotation_deg` (CCW from grid east to local +X),
+  `scale`, `utm_zone`, `south`, `height_known`, `source`, `zone_source`, `crs_name`. Setting any of
+  them emits `changed`.
+- `is_located() -> bool` (position and zone), `has_position() -> bool`
+- `local_to_map(p: Vector3) -> PackedFloat64Array [E, N, H]`, `map_to_local(e, n, h) -> Vector3`
+- `map_frame_transform() -> Transform3D` — map frame (+X east, +Y up, -Z north) in container space
+- `same_map_as(other) -> bool` — both positioned, same hemisphere, same zone (unknown zone = either)
+- `relative_transform(other) -> Transform3D` — takes `other`'s container space into this one's
+  (offset, rotation and scale difference); how a second model is placed
+- `lat_lon() -> {lat, lon}`, `describe() -> String`
+- `static from_ifc_import(info: Dictionary, godot_shift: Vector3) -> GeoOrigin` — `info` from
+  `recenter_with_info()`, `godot_shift` = the vector subtracted from the model after load.
+- `static looks_like_utm(e, n) -> bool`
+
+### `Solar` (`RefCounted`, static)
+- `position(lat, lon, unix_utc) -> {elevation, azimuth}` (radians; azimuth from north, clockwise)
+- `direction_to_sun(elevation, azimuth) -> Vector3` (map frame)
+- `is_eu_summer_time(unix_utc) -> bool`,
+  `local_to_unix(year, month, day, local_hours, std_offset_hours, eu_dst) -> float`
+
+### `GeoSun` (`DirectionalLight3D`, runtime)
+- Exported: `follow_schedule`, `time_of_day` (hours, default 11), `utc_offset_hours` (default +1),
+  `eu_summer_time`, `fallback_lat_lon`, `sequence_manager_path`.
+- `set_date(year, month, day)`, `set_date_from_unix(unix)`; `static update_all(tree, unix)` —
+  called by `TimelineController.scrub_to()` for schedules with calendar dates.
+
+---
+
+## Terrain classes (`terrain/`)
+
+### `TerrainSpec` (`RefCounted`)
+- Fields: `zone`, `south`, `center_e`, `center_n` (whole metres), `dem_half`, `cell`,
+  `detail_half`, `context_half`, `ortho_px`. `PRESETS` (`small`, `standard`, `large`).
+- `static create(zone, e, n, preset := "standard", south := false) -> TerrainSpec`
+- `grid_n() -> int`, `grid_e(col)`, `grid_north(row)`, `key() -> String` (cache folder),
+  `geo_bounds(half, pad_deg := 0.002) -> [lat0, lat1, lon0, lon1]`, `center_geo()`,
+  `geo_grid() -> {lat, lon}` (every grid point, row-major from the north-west).
+
+### `TerrainProvider` (`RefCounted`, base) — `SpainIgnProvider`, `TerrariumProvider`
+- `id()`, `display_name()`, `covers(lat, lon)`, `has_imagery()`, `attribution()`, `candidate_zones()`
+- `elevation_downloads(spec) -> [{url, file, timeout}]`, `validate_elevation(path) -> String`,
+  `build_heights(spec, dir) -> {heights: PackedFloat32Array, error}` (worker thread)
+- `ortho_download(spec, half, name) -> {url, file, timeout, rect}`, `validate_ortho(path) -> String`
+- `probe_download(lat, lon) -> {url, file, timeout}`, `probe_height(path) -> float` (NAN = sea/no data)
+- `static image_complete(path) -> String`
+- `SpainIgnProvider.wcs_url(lat0, lat1, lon0, lon1)`, `.wms_url(zone, e0, n0, e1, n1, px)`;
+  `TerrariumProvider.tile_xy(lat, lon, zoom)`, `.tile_range(spec)`, `.decode(img) -> PackedFloat32Array`.
+
+### `TerrainService` (`Node`)
+- Signal `progress(text: String)`; `cancelled: bool`.
+- `static providers() -> Array`, `static provider_for(lat, lon) -> TerrainProvider`, `static provider_by_id(id)`
+- `fetch(url, dest, timeout, validate := Callable()) -> String` (await; "" = ok), up to 4 attempts.
+- `static download_blocking(url, out_path, timeout, owner = null) -> {error, code}` (worker thread)
+- `run_threaded(fn: Callable) -> Variant` (await)
+- `detect_zone(provider, e, n, model_height, cache_dir) -> {zone, detail}` (await);
+  `static pick_zone(candidates, model_height) -> {zone, detail}`
+- `build(spec, provider, cache_root, with_imagery := true) -> {data, path, error}` (await)
+- `build_from_files(spec, asc_path, ortho_paths, cache_root) -> {data, path, error}` (await)
+
+### `TerrainBuilder` (`RefCounted`, static)
+- `sample_geographic(grid: AscGrid, spec)`, `sample_projected(grid, spec)` → `PackedFloat32Array`
+- `heights_from_asc_file(path, spec) -> {heights, error}`
+- `make_data(spec, heights) -> TerrainData`, `add_collision(data)`
+- `ortho_image(path) -> Image`, `compressed_texture(img) -> Texture2D`, `ortho_texture(path)`
+- `world_file_rect(image_path, w, h) -> PackedFloat64Array`, `write_world_file(image_path, rect, px)`
+- `model_samples(container, geo, to_anchor := Transform3D()) -> [{e, n, bottom, top}]` — `to_anchor`
+  takes an extra container's space into the primary's
+- `position_check(data, samples) -> {ok, text, lift, count}`
+
+### `AscGrid` (`RefCounted`)
+- `static parse(text, error := {}) -> AscGrid` (null if not a grid; tolerates multipart MIME)
+- Fields `ncols`, `nrows`, `xll`, `yll`, `cellsize`, `nodata`, `values: PackedFloat64Array`
+- `fill_nodata() -> int`, `sample(x, y) -> float`, `contains(x, y)`, `land_mean() -> float`
+
+### `TerrainData` (`Resource`)
+- `zone`, `south`, `center_e`, `center_n`, `cell`, `grid_n`, `heights`, `min_height`, `max_height`,
+  `detail_texture`, `detail_rect`, `context_texture`, `context_rect`, `collision_n`,
+  `collision_map`, `provider_id`, `attribution`
+- `height_at(e, n) -> float`, `contains(e, n)`, `collision_spacing()`, `height_image() -> Image`
+
+### `ConstructionTerrain` (`Node3D`, `@tool`)
+- Exported: `data: TerrainData`, `geo_origin: GeoOrigin`, `anchor_path` (the parts container),
+  `use_near_textures`, `grade_orthophoto`, `collision_enabled`, `ground_textures_dir`.
+- `rebuild()`, `update_placement()`, `height_at(e, n)`.
+
+### `GroundTextures` (`RefCounted`, static)
+- `DEFAULT_DIR`, `SETS`, `MAPS`, `CREDIT`; `present(dir)`, `load_all(dir) -> Dictionary`,
+  `ensure(service, dir) -> String` (await).
+
+### `TerrainPanel` (`VBoxContainer`, editor)
+- The dock's Terreno section. `refresh()`, `on_ifc_imported()` (called by the dock after an import).
 
 ---
 

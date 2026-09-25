@@ -3,3 +3,5 @@
 *.tmp
 # Local scratch
 *.pre_*
+
+/testmodels/

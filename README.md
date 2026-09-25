@@ -10,6 +10,9 @@ state on that day, or press Play to watch it get built.
   import/export as CSV and Microsoft Project XML.
 - **Animations**: `scale_up`, `drop_in`, `rise_up`, `sink_down`, `fill_up` (concrete pour),
   `fade_in`, `fade_out`, `install` (crane).
+- **Terrain**: downloads the real ground around a georeferenced model (elevation + orthophotos;
+  Spain at 5 m / 25 cm, elevation-only worldwide), drapes it under the model, and lights the scene
+  with the sun of the schedule's date.
 - **Also**: formwork generation, collision scan, multi-crane, camera keyframes, movie mode,
   and an optional IFC pipeline (needs the separate GDIFC addon).
 
@@ -35,11 +38,28 @@ Open `addons/construction_4d_tool/examples/demo.tscn` and see
    **Construction Json Path** to it. The default is `res://construction_steps.json`.
 4. Press Play, or use the dock's **Start Preview** to scrub in the editor.
 
+## Terrain
+
+After **Load IFC (4D)** the model keeps its position on Earth (`SequenceManager.geo_origin`), and
+the dock's **Terreno** section downloads the ground around it — automatically after import when the
+model is georeferenced. Models without a georeference take a latitude/longitude typed into the dock.
+Several IFC files of one site (e.g. two carriageways) can be loaded into the same scene: each is
+placed relative to the first by its georeference.
+**Añadir sol** adds a light that follows the timeline's date. Needs an Internet connection the
+first time (files are cached in `res://terrain/`); your own `.asc` + JPG/world-file data also work.
+See [`docs/10_TERRAIN.md`](docs/10_TERRAIN.md).
+
+Data credit, required wherever the terrain is shown: *© Instituto Geográfico Nacional de España —
+PNOA / MDT05, CC BY 4.0 (scne.es)* for Spain; the Terrain Tiles source list elsewhere (shown in the
+dock). Near-ground textures come from Poly Haven (CC0).
+
 ## Layout
 
 ```
 core/      schedule maths, animations, collision, formwork (no scene assumptions)
-runtime/   SequenceManager, timeline controller + UI, cranes, cameras
+geo/       UTM, IFC georeference, the model's map origin, sun position
+terrain/   terrain providers, download + build, terrain node and ground shader
+runtime/   SequenceManager, timeline controller + UI, cranes, cameras, GeoSun
 editor/    the dock, inspector, CSV / Project XML import-export
 ifc/       optional IFC import: property scan, mapping, adapter, schedule generator
 examples/  demo scene + annotated schedule
@@ -58,9 +78,15 @@ no property names are built in. See [`docs/05_IFC_INTEGRATION.md`](docs/05_IFC_I
 ```
 godot --headless --path . --editor --quit        # once, so class names register
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_ifc_mapping.gd
+godot --headless --path . --script res://addons/construction_4d_tool/tests/test_geo.gd
+godot --headless --path . --script res://addons/construction_4d_tool/tests/test_terrain.gd
+godot --headless --path . --script res://addons/construction_4d_tool/tests/test_ifc_georef_gdifc.gd   # needs GDIFC
+godot --headless --path . --script res://addons/construction_4d_tool/tests/test_ifc_scene_models.gd   # import part needs GDIFC
 ```
 
-## Known limitations (0.4.0)
+None of them use the network.
+
+## Known limitations (0.5.0)
 
 - The dock's labels are in Spanish (tooltips carry the underlying English field names).
 - Animation offsets (drop height, rise depth, crane hover/pickup) are absolute metres, tuned for
@@ -69,6 +95,8 @@ godot --headless --path . --script res://addons/construction_4d_tool/tests/test_
 - Regenerating a schedule from IFC keeps hand-corrected `type`/`batch`, but not `formwork` blocks.
 - Parts of an action are spread along one continuous curve over its whole window rather than
   bucketed per day (`docs/README.md`, "Known limitations").
+- Terrain: orthophotos only for mainland Spain and the Balearics (elsewhere elevation only); the
+  ground ends at the edge of the downloaded square; no water surfaces.
 - `docs/` still carries some historical prose from the original build order.
 
 ## Licence

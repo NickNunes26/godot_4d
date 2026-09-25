@@ -17,6 +17,9 @@ deliberately left, and what is open.
   import; see `05_IFC_INTEGRATION.md`. Covered by `tests/test_ifc_mapping.gd`, which uses an
   invented property layout.
 - **Hand-corrected `type` / `batch` survive regeneration.**
+- **Terrain knows no country or project**: the data provider is picked from the site's
+  latitude/longitude (`TerrainService.providers()`), and new countries plug in as `TerrainProvider`
+  subclasses (`10_TERRAIN.md`). Test fixtures are invented IFCs.
 - **Verified in a fresh empty project**: every script and scene loads, and the example scene builds
   and progresses through its schedule, with GDIFC absent.
 

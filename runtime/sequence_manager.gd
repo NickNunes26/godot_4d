@@ -46,6 +46,11 @@ var _timeline_controller: TimelineController = null
 ## node that shouldn't be wired in (e.g. a decorative/preview crane prop) or
 ## if explicit control over exactly which nodes count is wanted.
 @export var crane_paths: Array[NodePath] = []
+## Where the parts container's origin is on the map (UTM), kept through IFC
+## import and used by the terrain and GeoSun. Filled in by Load IFC when the
+## model is georeferenced; editable here (or from the dock's Terreno section)
+## when it is not. See docs/10_TERRAIN.md.
+@export var geo_origin: GeoOrigin
 
 @export_group("Movie Maker Mode")
 ## Forces movie mode on without actually recording. Movie mode is normally

@@ -473,15 +473,21 @@ every company stores its schedule in different properties, the plugin ships no p
 `IfcPropertyScanner` lists what the model carries and `IfcMappingDialog` asks the user to pick the
 element id, start, end-or-duration, display name and animation-type rules (`IfcMapping`, saved as
 `<schedule>.ifc_profile.json`). `GDIFC4DAdapter.adapt(root, mapping)` names parts from the element
-id and `IFCScheduleGenerator.generate(container, mapping, existing)` writes the schedule; a
+id and `IFCScheduleGenerator.generate(parts, mapping, existing)` writes the schedule; a
 hand-corrected `type`/`batch` survives regeneration. Full workflow and limits are in
 `05_IFC_INTEGRATION.md`; signatures are in `04_API_REFERENCE.md`.
 
 `SequenceManager.parts_container_path` is required (no default), and `extra_part_containers` lists
 any further nodes whose children are also parts; `collect_part_nodes()` is the single read-only
-selection the runtime and the dock preview both use.
+selection the runtime and the dock preview both use. Several IFC files can be loaded into one
+scene: each later model gets its own container in `extra_part_containers`, placed relative to the
+first by its georeference (`IfcSceneModels`, see `05_IFC_INTEGRATION.md`).
 
-Headless tests live in `tests/` (`test_ifc_mapping.gd`).
+The import also keeps the model's position on Earth (`SequenceManager.geo_origin`), which the
+terrain and the date-driven sun use; see `10_TERRAIN.md`.
+
+Headless tests live in `tests/` (`test_ifc_mapping.gd`, `test_geo.gd`, `test_terrain.gd`,
+`test_ifc_georef_gdifc.gd`, `test_ifc_scene_models.gd`).
 
 ## Known limitations (Phase 1)
 
@@ -1612,7 +1618,13 @@ func _process(_d: float) -> bool:
     return true   # true = quit
 ```
 
-Four things that will otherwise cost time:
+Things that will otherwise cost time:
+
+- **GDIFC loaded twice never finishes a load.** If a second copy of `gdifc.gdextension` sits
+  anywhere inside the project (and in `.godot/extension_list.cfg`), Godot prints hundreds of
+  `Attempt to register extension class ... already registered` errors and `read_ifc()` returns
+  `OK` but `ifc_read` never fires. Put a `.gdignore` in the stray copy's folder and drop its line
+  from `extension_list.cfg`. With a single copy, headless loads work in `--script` runs too.
 
 - **`read_ifc()` is asynchronous.** It returns `OK` immediately and emits `ifc_read`
   roughly 17 frames later, so a check written entirely inside `_initialize()` sees no

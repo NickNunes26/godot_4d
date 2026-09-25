@@ -3,6 +3,54 @@
 Notable changes per release. The design reasoning behind each subsystem lives in the numbered
 docs in this folder; `README.md` is the as-built reference.
 
+## 0.5.0
+
+**Terrain** (new, see `10_TERRAIN.md`)
+- The dock's **Terreno** section downloads the ground around the model and builds it under the
+  `SequenceManager`: 5 m elevation and 25 cm / 1 m orthophotos for mainland Spain and the Balearics
+  (IGN, CC BY 4.0), elevation only elsewhere (Terrain Tiles). Runs automatically after
+  Load IFC (4D) for georeferenced models (optional). Downloads retry, are cached in
+  `res://terrain/<site>/`, and are checked for completeness.
+- Own data instead of downloads: an `.asc` grid plus JPG/PNG orthophotos with world files.
+- `ConstructionTerrain` node: mesh and collision generated on load from a saved `TerrainData`, so
+  scenes stay small; follows edits of the georeference. Ground shader with graded orthophoto and
+  near-camera leaf/rock PBR textures (Poly Haven, CC0).
+- Position check after every build (floating / buried model), and "sit on the ground" for models
+  with no real height.
+- `GeoSun`: a directional light placed where the sun is over the site on the timeline's date.
+
+**Georeference**
+- The model's position on Earth survives IFC import: `SequenceManager.geo_origin` (`GeoOrigin`)
+  records it from `IfcMapConversion` (with rotation and scale), `IfcProjectedCRS`, or map
+  coordinates in the root placement. Editable in the inspector and the dock.
+- `GDIFCRecenter.recenter_with_info()` returns what it stripped (it used to be printed and lost).
+  Several root placements with different large offsets now keep their relative positions.
+- `GDIFCRecenter` no longer rewrites a file whose only offset is in `IfcMapConversion` (GDIFC ignores
+  the map conversion): a model of several hundred MB now loads with no copy. The pass itself takes ~1 s on such a
+  file (transient ~1.3 GB while it reads it as text).
+- UTM zone read from the IFC, deduced from ground heights (Spain), or entered by hand.
+- GDIFC's axis convention is verified and documented (IFC x, y, z → Godot x, z, -y).
+
+**Several models in one scene** (new, see `05_IFC_INTEGRATION.md`)
+- Loading a second IFC file no longer replaces the first: each model gets its own
+  `IFCParts_<file>` container in `extra_part_containers`, placed relative to the first by its
+  georeference (`IfcSceneModels`, `GeoOrigin.relative_transform()`); the scene's origin and the
+  terrain are kept. Loading a file again replaces its container in place.
+- Part names repeated across models get a suffix instead of shadowing each other.
+- Generate 4D Schedule and the terrain position check cover every model.
+
+**Fixed**
+- **Load IFC (4D) did nothing past the file dialog**: `read_ifc()` was passed an `int` where GDIFC
+  expects an `Array`, which raised a script error before the import callback was connected.
+- The dock now sets GDIFC's `coordinate_to_origin` explicitly (off), so no shift can happen
+  unrecorded.
+- **Files with CRLF line endings kept their map-sized root offset** (so loaded with float32 jitter):
+  `GDIFCRecenter`'s patterns only matched LF lines.
+
+**Tests**: `test_geo.gd`, `test_terrain.gd` (no network), `test_ifc_scene_models.gd` (two models of
+one site, re-imports, unplaceable models), `test_ifc_georef_gdifc.gd` (end-to-end
+through GDIFC on invented fixtures in `tests/fixtures/`).
+
 ## 0.4.0
 
 First standalone release of the addon.

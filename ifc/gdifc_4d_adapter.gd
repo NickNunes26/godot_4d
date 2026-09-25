@@ -23,15 +23,18 @@ extends RefCounted
 ## just not individually schedulable. With no mapping at all every part uses
 ## the fallback.
 
-static func adapt(ifc_root: Node, mapping: IfcMapping = null) -> Node3D:
+static func adapt(ifc_root: Node, mapping: IfcMapping = null, taken_names: Dictionary = {}) -> Node3D:
 	var container := Node3D.new()
 	container.name = "IFCParts"
 
 	var leaves: Array[Dictionary] = []
 	_collect_leaves(ifc_root, ifc_root.name, leaves)
 
-	var used_names := {}
+	# Seeded with the names other models in the scene already use, so a part
+	# that repeats one gets a suffix instead of shadowing it.
+	var used_names := taken_names.duplicate()
 	var missing_pset_count := 0
+	var renamed_count := 0
 
 	for entry in leaves:
 		var leaf := entry.node as MeshInstance3D
@@ -61,6 +64,8 @@ static func adapt(ifc_root: Node, mapping: IfcMapping = null) -> Node3D:
 			missing_pset_count += 1
 			base_name = "%s_%s" % [zone, leaf.name]
 
+		if taken_names.has(base_name):
+			renamed_count += 1
 		leaf.name = _uniquify(base_name, used_names)
 		if display_name != null:
 			leaf.set_meta("ifc_display_name", display_name)
@@ -76,6 +81,8 @@ static func adapt(ifc_root: Node, mapping: IfcMapping = null) -> Node3D:
 
 	if missing_pset_count > 0:
 		push_warning("GDIFC4DAdapter: %d/%d parts had no Element ID value -- named by structural zone instead, so they render/collide but aren't individually schedulable" % [missing_pset_count, leaves.size()])
+	if renamed_count > 0:
+		push_warning("GDIFC4DAdapter: %d part(s) repeat a name another model in the scene already uses -- suffixed (_2, _3...) so both stay registered" % renamed_count)
 
 	return container
 
@@ -176,5 +183,13 @@ static func _uniquify(name: String, used_names: Dictionary) -> String:
 	if not used_names.has(name):
 		used_names[name] = 1
 		return name
-	used_names[name] += 1
-	return "%s_%d" % [name, used_names[name]]
+	# Skip suffixed names already in use too ("X_2" may be a name of its own,
+	# or another model's suffixed "X").
+	var n: int = used_names[name]
+	var candidate := name
+	while used_names.has(candidate):
+		n += 1
+		candidate = "%s_%d" % [name, n]
+	used_names[name] = n
+	used_names[candidate] = 1
+	return candidate

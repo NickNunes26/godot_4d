@@ -105,6 +105,20 @@ var _mapping_dialog: ProjectXmlMappingDialog = null
 
 var _ifc_manager = null
 var _ifc_file_dialog: EditorFileDialog = null
+# What GDIFCRecenter stripped from the file being imported, and the framing
+# shift _recenter_to_origin() applied after load: together they say where the
+# imported parts are on the map (GeoOrigin.from_ifc_import()).
+var _ifc_import_info: Dictionary = {}
+var _ifc_framing_shift := Vector3.ZERO
+# The file the user picked (the one GDIFC reads may be a recentered copy):
+# names the model's container, so importing it again replaces it.
+var _ifc_source_path := ""
+
+# The "Terreno" section (terrain_panel.gd).
+var _terrain_panel: TerrainPanel = null
+# GeoSun transforms before Start Preview, so the preview's date-driven sun
+# never leaks into the saved scene (same guarantee as the parts' snapshot).
+var _sun_snapshot: Dictionary = {} # GeoSun -> Transform3D
 
 func _ready() -> void:
 	_inspector = ScheduleInspector.new(_inspector_list, _grouper, _on_schedule_edited)
@@ -152,6 +166,9 @@ Off unless a project turns it on -- see 08_POUR_STREAM.md. Live playback only; s
 	edit_mapping_button.pressed.connect(_on_edit_ifc_mapping_pressed)
 	buttons_container.add_child(edit_mapping_button)
 
+	_terrain_panel = TerrainPanel.new()
+	$VBox.add_child(_terrain_panel)
+
 	_dirty_label.visible = false
 	_warning_label.visible = false
 	_stop_button.disabled = true
@@ -170,6 +187,8 @@ func _process(_delta: float) -> void:
 	if _preview_active:
 		stop_preview()
 	_refresh_target()
+	if _terrain_panel:
+		_terrain_panel.refresh()
 
 func _refresh_target() -> void:
 	var root = EditorInterface.get_edited_scene_root()
@@ -205,6 +224,9 @@ func start_preview() -> void:
 	var scene_root = EditorInterface.get_edited_scene_root()
 	_preview_parts = _collect_preview_parts(_sequence_manager, scene_root)
 	_material_snapshot = _snapshot_materials(_preview_parts)
+	_sun_snapshot.clear()
+	for sun in get_tree().get_nodes_in_group(GeoSun.GROUP):
+		_sun_snapshot[sun] = (sun as Node3D).transform
 
 	# Reuses SequenceManager's own setup exactly as Play mode does: parses
 	# the JSON, registers building_parts, sets the original_pos/scale/
@@ -267,6 +289,11 @@ func stop_preview() -> void:
 	_restore_materials(_material_snapshot)
 	_material_snapshot.clear()
 	_preview_parts.clear()
+	for sun in _sun_snapshot:
+		if is_instance_valid(sun):
+			sun.transform = _sun_snapshot[sun]
+			sun.set("_date", {})
+	_sun_snapshot.clear()
 
 	# Generated formwork is a view of the schedule, not part of the scene, and
 	# is deliberately never owned -- so it would not be saved, but it would sit
@@ -544,13 +571,26 @@ func _on_ifc_file_selected(path: String) -> void:
 		_ifc_manager = ClassDB.instantiate("GDIFCManager")
 		current_scene_root.add_child(_ifc_manager)
 		_ifc_manager.owner = current_scene_root
+	# Explicitly off: GDIFCRecenter already strips map-sized offsets, and any
+	# shift GDIFC made on its own would be one nobody recorded.
+	if ClassDB.class_exists("GDIFCLoaderSettings"):
+		var settings = ClassDB.instantiate("GDIFCLoaderSettings")
+		settings.set("coordinate_to_origin", false)
+		_ifc_manager.set_gdifc_settings(settings)
 
-	var recentered_path := GDIFCRecenter.recenter(path)
-	_ifc_manager.read_ifc(recentered_path, false, 0)
-	_ifc_manager.set_display_folded(true)
-	
+	_ifc_import_info = GDIFCRecenter.recenter_with_info(path)
+	_ifc_framing_shift = Vector3.ZERO
+	_ifc_source_path = path
+	# Connect before reading: a small model can finish loading quickly.
 	if not _ifc_manager.ifc_read.is_connected(_on_readed_file):
 		_ifc_manager.ifc_read.connect(_on_readed_file)
+	# The third argument is the list of IFC classes to build collision for (an
+	# Array); passing an int here raised a script error that aborted the import.
+	var err = _ifc_manager.read_ifc(_ifc_import_info.path, false, [])
+	if err != OK:
+		push_error("4D dock: GDIFC could not start reading '%s' (error %s)." % [path, err])
+		return
+	_ifc_manager.set_display_folded(true)
 
 func _on_readed_file() -> void:
 	_recenter_to_origin()
@@ -628,31 +668,65 @@ func _recenter_to_origin() -> void:
 	if first:
 		return
 
-	_ifc_manager.global_position -= aabb.get_center()
+	_ifc_framing_shift = aabb.get_center()
+	_ifc_manager.global_position -= _ifc_framing_shift
 
 func _adapt_for_4d_tool(mapping: IfcMapping) -> void:
 	var current_scene_root = EditorInterface.get_edited_scene_root()
-	var container := GDIFC4DAdapter.adapt(_ifc_manager, mapping)
-
 	var sequence_manager := _find_sequence_manager(current_scene_root)
-	var target_parent: Node = sequence_manager if sequence_manager else current_scene_root
-	if not sequence_manager:
-		push_warning("4D dock: no SequenceManager found in the open scene -- parented parts under the scene root instead. Add a SequenceManager node and re-import, or move 'IFCParts' under one and set its parts_container_path yourself.")
-
-	target_parent.add_child(container, true)
-	_own_recursive(container, current_scene_root)
-
-	if sequence_manager:
-		sequence_manager.set("parts_container_path", sequence_manager.get_path_to(container))
-
+	var source_file := _ifc_source_path.get_file()
+	# Names other models in the scene already use (none without a SequenceManager).
+	var taken := IfcSceneModels.taken_part_names(sequence_manager, source_file) if sequence_manager else {}
+	var container := GDIFC4DAdapter.adapt(_ifc_manager, mapping, taken)
 	_ifc_manager.queue_free()
 	_ifc_manager = null
 
-	print("4D dock: imported %d part(s) into '%s'%s. Save the scene to persist them." % [
+	if not sequence_manager:
+		push_warning("4D dock: no SequenceManager found in the open scene -- parented parts under the scene root instead. Add a SequenceManager node and re-import, or move 'IFCParts' under one and set its parts_container_path yourself.")
+		current_scene_root.add_child(container, true)
+		_own_recursive(container, current_scene_root)
+		print("4D dock: imported %d part(s) into '%s'. Save the scene to persist them." % [
+			container.get_child_count(), current_scene_root.get_path_to(container)])
+		return
+
+	var fresh := GeoOrigin.from_ifc_import(_ifc_import_info, _ifc_framing_shift)
+	if not _ifc_import_info.get("map_conversion", {}).is_empty() and _ifc_framing_shift.length() > 100000.0:
+		push_warning("4D dock: '%s' loaded at map coordinates although its offset is in IfcMapConversion -- this GDIFC applies the map conversion, so the recorded origin counts it twice. Check the model's position." % source_file)
+	var result := IfcSceneModels.attach(sequence_manager, container, fresh, source_file)
+	_own_recursive(container, current_scene_root)
+	if result.message != "":
+		push_warning("4D dock: " + result.message)
+
+	var models := IfcSceneModels.containers(sequence_manager)
+	print("4D dock: imported %d part(s) into '%s' (%s%s)%s. Save the scene to persist them." % [
 		container.get_child_count(),
-		target_parent.get_path_to(container),
-		" and pointed SequenceManager.parts_container_path at it" if sequence_manager else ""
-	])
+		sequence_manager.get_path_to(container),
+		"replaced the earlier import, " if result.replaced else "",
+		"parts_container_path" if result.role == "primary" else "extra_part_containers",
+		"; placed %s relative to the scene's first model, %d models in the scene" % [
+			"by the georeference" if result.placement == "map" else "at the origin", models.size()] if models.size() > 1 else ""])
+	if models.size() > 1 and models.any(func(c): return not c.has_meta(IfcSceneModels.SOURCE_META)):
+		print("4D dock: the scene holds a model imported before 0.5.0 (no source file recorded). If '%s' is a newer version of it, delete the old container and remove it from the SequenceManager." % source_file)
+	_store_geo_origin(sequence_manager, result.geo_changed)
+
+## Points the terrain at the (possibly new) primary container and origin, then
+## lets the Terreno section act on the import.
+func _store_geo_origin(sequence_manager: Node, origin_changed: bool) -> void:
+	var geo: GeoOrigin = sequence_manager.get("geo_origin")
+	print("4D dock: %s origin %s (%s)." % [
+		"model" if origin_changed else "scene keeps its",
+		geo.describe(), geo.source if geo.source != "" else "not georeferenced"])
+	var terrain = null
+	for child in sequence_manager.get_children():
+		if child is ConstructionTerrain:
+			terrain = child
+	if terrain:
+		var container = sequence_manager.get_node_or_null(sequence_manager.get("parts_container_path"))
+		if container:
+			terrain.anchor_path = terrain.get_path_to(container)
+		terrain.geo_origin = geo
+	if _terrain_panel:
+		_terrain_panel.on_ifc_imported()
 
 func _own_recursive(node: Node, owner: Node) -> void:
 	if node != owner:
@@ -681,8 +755,9 @@ func _on_generate_schedule_pressed() -> void:
 	if mapping == null or not mapping.is_valid():
 		push_warning("4D dock: no complete IFC mapping saved -- press Edit IFC mapping (or re-import the model) and choose the element id and date properties first.")
 		return
+	# Every model in the scene, not only the primary container.
 	var data := IFCScheduleGenerator.generate(
-		container, mapping, IFCScheduleGenerator.read_existing(json_path))
+		sequence_manager.collect_part_nodes(), mapping, IFCScheduleGenerator.read_existing(json_path))
 	if data.is_empty():
 		return
 	# generate() recorded what it derived, so a later run can tell a hand-edited type from its own.
