@@ -1,5 +1,8 @@
 # 4D Construction Tool
 
+*Using the tool rather than changing it? Read the step-by-step guide instead:
+[GUIDE.md](../GUIDE.md) (English) · [GUIA.md](../GUIA.md) (español).*
+
 **Release 0.4.0** is the first standalone, self-contained addon. Layout: `core/` (schedule maths,
 animations, collision, formwork), `runtime/` (SequenceManager, controller, UI, cranes, cameras),
 `editor/` (dock, inspector, CSV/XML I/O), `ifc/` (optional IFC import), `examples/`, `tests/`.

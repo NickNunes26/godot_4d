@@ -3,6 +3,16 @@
 Notable changes per release. The design reasoning behind each subsystem lives in the numbered
 docs in this folder; `README.md` is the as-built reference.
 
+## Unreleased
+
+**Instructions for everybody, in English and Spanish.** The README is now bilingual: each section
+is an English paragraph followed by its Spanish version, with the developer material kept in
+English. Two complete step-by-step guides, [GUIDE.md](../GUIDE.md) and [GUIA.md](../GUIA.md),
+cover installation, preparing the scene, the IFC mapping dialog field by field, the three ways to
+get a schedule (IFC only, IFC + Project XML, an existing JSON), terrain and levelling, the editor
+preview and Schedule Inspector, formwork and scaffolding, playing, recording and sharing a video,
+and a troubleshooting table.
+
 ## 0.6.0
 
 Levelled terrain platforms, IFC + MS Project workflow verified end to end from a fresh project,
