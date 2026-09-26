@@ -16,13 +16,18 @@ state on that day, or press Play to watch it get built.
 - **Also**: formwork generation, collision scan, multi-crane, camera keyframes, movie mode,
   and an optional IFC pipeline (needs the separate GDIFC addon).
 
-Tested with **Godot 4.6**.
+Tested with **Godot 4.6** and **4.7.2**. The whole IFC workflow below has been run end to end
+in a fresh 4.7.2 project.
 
 ## Install
 
 1. Copy this folder to `res://addons/construction_4d_tool/` in your project
    (or download a release ZIP and extract it into the project root).
 2. Project Settings → Plugins → enable **Construction 4D Tool**.
+3. For IFC models, also install **GDIFC**, a separate addon. It is on the Godot Asset Library
+   ([asset 4212](https://godotengine.org/asset-library/asset/4212), source
+   [Muniz1994/GDIFCpub](https://github.com/Muniz1994/GDIFCpub)). Put its `addons/GDIFC` folder
+   into your project and enable **GDIFC** in Project Settings → Plugins as well.
 
 ## Try the example
 
@@ -42,6 +47,29 @@ A scene with no `Camera3D`, no environment or no `DirectionalLight3D` of its own
 model when you press Play. For that run only, `SequenceManager` adds whatever is missing: a
 free-fly camera framed on the whole model, a procedural sky and a sun. It prints a line saying so
 and saves nothing into the scene. Add your own nodes to replace them.
+
+### From an IFC file
+
+This is the sequence verified end to end in a new project:
+
+1. New 3D scene; add a `Node3D` with `runtime/sequence_manager.gd` attached; save the scene.
+2. Dock: **Load IFC (4D)** → pick the `.ifc` file.
+3. **Map IFC Properties**: choose which property is the element id, the start date, and the
+   end date or duration. Optionally also the display name and the property plus rules that pick
+   the animation type. Nothing is pre-selected: the plugin knows no property names. Your answers
+   are saved beside the schedule, and a later import of the same kind of model reuses them
+   silently.
+4. The parts arrive under the `SequenceManager`. If the model is georeferenced, the terrain
+   downloads by itself (**Terreno** section).
+5. **Generate 4D Schedule** writes `construction_steps.json` from those properties.
+6. Optional, in **Terreno**: **Añadir sol**, and **Nivelar desde el modelo** for a building
+   (pad + excavation, tied to the earthwork activities).
+7. **Start Preview** and drag the slider; **Stop Preview**; save.
+8. F5 (pick the scene as main scene the first time) → **Play**.
+
+An IFC property can only give each element one animation, so anything that is put up and later
+removed (scaffolding, formwork) comes out as permanent. Give it a `formwork` block in the
+Schedule Inspector (`docs/README.md`, "Formwork").
 
 ## Terrain
 

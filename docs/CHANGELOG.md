@@ -5,6 +5,12 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## Unreleased
 
+**End-to-end check in a fresh project** (Godot 4.7.2, GDIFC from the Asset Library, the addon
+from `main`, `models/galicia_model.ifc`). Every README test suite and the demo pass. So do
+Load IFC → mapping → automatic terrain → Generate 4D Schedule → sun → levelling → preview →
+Play, driven through the dock's own buttons and dialogs. It turned up the two fixes below; the
+README now has the verified IFC sequence and where to get GDIFC.
+
 **Play no longer shows a grey screen in a scene without a camera**
 (`runtime/sequence_manager.gd`, `_ensure_view()`). The documented steps never add a
 `Camera3D`, environment or light, so a scene built by following them ran as an empty grey
