@@ -71,6 +71,20 @@ func _init() -> void:
 	_check("non-ISO is not a date", IfcMapping.to_date_string("04/03/2026"), "")
 	_check("incomplete mapping generates nothing", IFCScheduleGenerator.generate(raw, IfcMapping.new()).is_empty(), true)
 
+	print("=== text GDIFC mis-decodes")
+	_check("UTF-8 read as Latin-1 is repaired", GDIFC4DAdapter.repair_string("FormigÃ³n de limpeza"), "Formigón de limpeza")
+	_check("three-byte sequences too (en dash)", GDIFC4DAdapter.repair_string("Farol 4 â\u0080\u0093 luminaria".c_unescape()), "Farol 4 – luminaria")
+	_check("correct text is left alone", GDIFC4DAdapter.repair_string("Formigón"), "Formigón")
+	_check("genuine Latin-1 (not valid UTF-8) is left alone", GDIFC4DAdapter.repair_string("Cañón"), "Cañón")
+	_check("ASCII is left alone", GDIFC4DAdapter.repair_string("C04_Limpeza"), "C04_Limpeza")
+	_check("keys and nested values", GDIFC4DAdapter.repair_value({"Pset": {"Fase": "CimentaciÃ³n", "N": 3}}), {"Pset": {"Fase": "Cimentación", "N": 3}})
+	var garbled := MeshInstance3D.new()
+	garbled.set_meta("unused", true)
+	var holder := Node3D.new()
+	holder.add_child(garbled)
+	_check("repair_text() on a tree with no text changes nothing", GDIFC4DAdapter.repair_text(holder), 0)
+	holder.free()
+
 	print("=== adapter names parts from the chosen property")
 	var container := GDIFC4DAdapter.adapt(raw, m)
 	var names := []

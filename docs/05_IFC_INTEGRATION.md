@@ -82,6 +82,15 @@ breaks the scaling and positioning the timeline relies on. `GDIFC4DAdapter` ther
   zone (`<zone>_<original name>`), so it still renders and collides but cannot be scheduled;
 - removes GDIFC's own collision helper nodes (the tool builds its own collision shapes).
 
+**Accented text.** GDIFC turns IFC strings into UTF-8 bytes and then reads them back as Latin-1.
+So a correctly encoded `Formig\X2\00F3\X0\n` arrives as `FormigÃ³n`, in the mapping dialog, the
+schedule comments and every saved scene. The dock runs `GDIFC4DAdapter.repair_text()` on the
+freshly read model before anything scans its properties. It decodes a string again only when it
+is made entirely of U+0000..U+00FF characters whose bytes form valid UTF-8 containing a
+multi-byte sequence: exactly this fault. Correct text and genuine Latin-1 are left alone. It
+prints how many parts it repaired. The real fix belongs in GDIFC; the repair becomes a no-op
+once GDIFC decodes correctly.
+
 `GDIFCRecenter` first strips a very large offset in the root placement from a copy of the file,
 because GDIFC stores coordinates at float32 precision and models placed at survey coordinates
 jitter and z-fight otherwise (files with CRLF line endings included). An offset held in

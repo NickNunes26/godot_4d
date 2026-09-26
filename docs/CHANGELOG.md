@@ -5,6 +5,14 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## Unreleased
 
+**Accented IFC text is repaired on import** (`ifc/gdifc_4d_adapter.gd`,
+`repair_text()` / `repair_string()`, called from the dock right after GDIFC reads the file).
+GDIFC 1.1.0-alpha reads IFC text as UTF-8 bytes taken for Latin-1, so every accented label
+arrived garbled ("FormigÃ³n de limpeza"). It showed in the mapping dialog, in 21 of the Galicia
+schedule's comments and throughout the saved scene. The IFC itself is correct (`\X2\00F3\X0\`).
+Only strings with exactly that signature are decoded again; tests cover two- and three-byte
+sequences, text that is already right, and genuine Latin-1.
+
 **End-to-end check in a fresh project** (Godot 4.7.2, GDIFC from the Asset Library, the addon
 from `main`, `models/galicia_model.ifc`). Every README test suite and the demo pass. So do
 Load IFC → mapping → automatic terrain → Generate 4D Schedule → sun → levelling → preview →

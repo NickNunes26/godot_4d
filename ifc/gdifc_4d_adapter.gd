@@ -179,6 +179,91 @@ static func get_property_sets(leaf: MeshInstance3D) -> Dictionary:
 	return {}
 
 
+# --- Text GDIFC mis-decodes ------------------------------------------------------
+
+## Repairs the text of every part under `root` in place (its `properties` and
+## `attributes`) and returns how many parts changed. Run it right after GDIFC has
+## read a file, before anything scans the properties or names parts from them.
+##
+## GDIFC turns IFC strings into UTF-8 bytes and then reads those bytes back as
+## Latin-1, so an IFC "Formig\X2\00F3\X0\n" (Formigón, correctly encoded)
+## arrives as "FormigÃ³n": in the mapping dialog, the schedule comments and every
+## saved scene. Seen with GDIFC 1.1.0-alpha on an IfcOpenShell 0.8.5 file.
+static func repair_text(root: Node) -> int:
+	var changed := 0
+	var nodes: Array = root.find_children("*", "MeshInstance3D", true, false)
+	if root is MeshInstance3D:
+		nodes.append(root)
+	for node in nodes:
+		var touched := false
+		for key in ["properties", "attributes"]:
+			var value = node.get(key)
+			if not (value is Dictionary):
+				continue
+			var fixed = repair_value(value)
+			if fixed != value:
+				node.set(key, fixed)
+				touched = true
+		if touched:
+			changed += 1
+	return changed
+
+## `value` with every String inside it (Dictionary keys and values, Array items)
+## passed through repair_string().
+static func repair_value(value: Variant) -> Variant:
+	if value is String:
+		return repair_string(value)
+	if value is Dictionary:
+		var out := {}
+		for k in value:
+			out[repair_value(k)] = repair_value(value[k])
+		return out
+	if value is Array:
+		return (value as Array).map(func(v): return repair_value(v))
+	return value
+
+## Undoes UTF-8-read-as-Latin-1, and nothing else: only a string made entirely of
+## U+0000..U+00FF whose code points, taken as bytes, form valid UTF-8 containing
+## at least one multi-byte sequence is decoded again. ASCII, text that is already
+## right (anything above U+00FF) and genuine Latin-1 (not valid UTF-8 as bytes:
+## a lone "ó" is 0xF3, which cannot start a sequence followed by "n") come back
+## unchanged.
+static func repair_string(s: String) -> String:
+	var bytes := PackedByteArray()
+	var high := false
+	for i in s.length():
+		var c := s.unicode_at(i)
+		if c > 0xFF:
+			return s
+		if c >= 0x80:
+			high = true
+		bytes.append(c)
+	if not high or not _is_utf8(bytes):
+		return s
+	return bytes.get_string_from_utf8()
+
+static func _is_utf8(b: PackedByteArray) -> bool:
+	var i := 0
+	while i < b.size():
+		var c := b[i]
+		var extra := 0
+		if c < 0x80:
+			extra = 0
+		elif c >= 0xC2 and c <= 0xDF:
+			extra = 1
+		elif c >= 0xE0 and c <= 0xEF:
+			extra = 2
+		elif c >= 0xF0 and c <= 0xF4:
+			extra = 3
+		else:
+			return false
+		for k in range(1, extra + 1):
+			if i + k >= b.size() or (b[i + k] & 0xC0) != 0x80:
+				return false
+		i += extra + 1
+	return true
+
+
 static func _uniquify(name: String, used_names: Dictionary) -> String:
 	if not used_names.has(name):
 		used_names[name] = 1

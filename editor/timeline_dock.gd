@@ -596,6 +596,11 @@ func _on_ifc_file_selected(path: String) -> void:
 
 func _on_readed_file() -> void:
 	_recenter_to_origin()
+	# Before anything reads the properties: GDIFC hands accented text over
+	# mis-decoded ("FormigÃ³n"), see GDIFC4DAdapter.repair_text().
+	var repaired := GDIFC4DAdapter.repair_text(_ifc_manager)
+	if repaired > 0:
+		print("4D dock: repaired accented text GDIFC mis-decoded on %d part(s)." % repaired)
 	# The plugin knows no property names: scan what this model carries and let
 	# the user say which property is the element id, the dates, etc. A saved
 	# mapping that still fits this model is reused silently.
