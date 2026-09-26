@@ -160,6 +160,25 @@ func _start_movie_run(schedule: ConstructionSchedule) -> void:
 	_movie_date_label.add_theme_color_override("font_outline_color", Color.BLACK)
 	_movie_date_label.add_theme_constant_override("outline_size", 4)
 	canvas.add_child(_movie_date_label)
+	# Terrain data licences (IGN's CC BY 4.0 among them) require the credit
+	# wherever the ground is shown, and a recording is exactly that.
+	var credits: Array = []
+	for t in get_tree().get_nodes_in_group(ConstructionTerrain.GROUP):
+		var data: TerrainData = t.get("data")
+		if data and data.attribution.strip_edges() != "" and not credits.has(data.attribution.strip_edges()):
+			credits.append(data.attribution.strip_edges())
+	if not credits.is_empty():
+		var credit := Label.new()
+		credit.text = "\n".join(credits)
+		credit.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+		credit.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		credit.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		credit.add_theme_font_size_override("font_size", 16)
+		credit.add_theme_color_override("font_outline_color", Color.BLACK)
+		credit.add_theme_constant_override("outline_size", 3)
+		credit.offset_right = -12.0
+		credit.offset_bottom = -8.0
+		canvas.add_child(credit)
 	add_child(canvas)
 
 	_timeline_controller.begin_movie_run(movie_end_hold_sec)
@@ -248,27 +267,34 @@ func _ensure_view() -> void:
 		sun.global_rotation_degrees = Vector3(-50.0, 30.0, 0.0)
 		added.append("sun")
 	if get_viewport().get_camera_3d() == null:
-		# Framed on the whole model from the south-east and above, far enough
-		# back to see all of it; WASD/mouse from there (FreeLookCamera).
-		var box := _model_box()
+		# Framed on where the work is (_action_box()), from the south-east and
+		# above, close enough that the building fills the view rather than the
+		# whole site; WASD/mouse from there (FreeLookCamera).
+		var box := _action_box()
 		var radius := maxf(box.size.length() * 0.5, 5.0)
 		var cam := Camera3D.new()
 		cam.name = "DefaultCamera"
 		cam.set_script(_FREE_LOOK_SCRIPT)
-		cam.far = maxf(3000.0, radius * 20.0)
+		cam.far = maxf(3000.0, radius * 40.0)
 		add_child(cam)
-		cam.global_position = box.get_center() + Vector3(0.45, 0.5, 0.75).normalized() * radius * 1.9
+		cam.global_position = box.get_center() + Vector3(0.45, 0.5, 0.75).normalized() * radius * 1.6
 		cam.look_at(box.get_center(), Vector3.UP)
-		cam.set("move_speed", maxf(radius * 0.2, 8.0))
+		cam.set("move_speed", maxf(radius * 0.3, 8.0))
 		cam.make_current()
 		added.append("free-fly camera")
 	if not added.is_empty():
 		print("SequenceManager: the scene has no %s of its own -- added a default one for this run." % ", ".join(added))
 
-## World-space box around every part, at rest.
-func _model_box() -> AABB:
-	var box := AABB()
-	var first := true
+## Where the work is, in world space: per axis, the span of the middle 80 % of
+## part centres, grown by half the median part size. The whole model's box is
+## set by whatever lies furthest out -- a boundary wall, trees in the corners of
+## the plot, a tower crane -- and framing that left the building small in the
+## middle of the picture.
+func _action_box() -> AABB:
+	var xs := PackedFloat32Array()
+	var ys := PackedFloat32Array()
+	var zs := PackedFloat32Array()
+	var sizes := PackedFloat32Array()
 	for part in collect_part_nodes():
 		var meshes: Array = [part] if part is MeshInstance3D else []
 		meshes.append_array(part.find_children("*", "MeshInstance3D", true, false))
@@ -276,9 +302,22 @@ func _model_box() -> AABB:
 			if not m.mesh:
 				continue
 			var b: AABB = m.global_transform * m.mesh.get_aabb()
-			box = b if first else box.merge(b)
-			first = false
-	return box if not first else AABB(global_position - Vector3.ONE * 10.0, Vector3.ONE * 20.0)
+			var c := b.get_center()
+			xs.append(c.x)
+			ys.append(c.y)
+			zs.append(c.z)
+			sizes.append(b.size.length())
+	if xs.is_empty():
+		return AABB(global_position - Vector3.ONE * 10.0, Vector3.ONE * 20.0)
+	for arr in [xs, ys, zs, sizes]:
+		arr.sort()
+	var n := xs.size()
+	var lo_i := int(n * 0.1)
+	var hi_i := maxi(int(ceil(n * 0.9)) - 1, lo_i)
+	var pad := Vector3.ONE * sizes[n >> 1] * 0.5
+	var lo := Vector3(xs[lo_i], ys[lo_i], zs[lo_i]) - pad
+	var hi := Vector3(xs[hi_i], ys[hi_i], zs[hi_i]) + pad
+	return AABB(lo, hi - lo)
 
 static func _default_environment() -> Environment:
 	var sky := Sky.new()

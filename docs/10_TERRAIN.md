@@ -269,7 +269,8 @@ with the fraction of the day would strobe.
 ## Attribution
 
 Shown in the dock under the terrain and stored in `TerrainData.attribution`; reproduce it wherever
-the terrain appears (renders, videos, publications):
+the terrain appears (renders, videos, publications). Movie Maker recordings draw it bottom right by
+themselves (`SequenceManager._start_movie_run()`); screenshots and edited videos need it added.
 
 - Spain: **© Instituto Geográfico Nacional de España — PNOA / MDT05, CC BY 4.0 (scne.es)**
 - Terrain Tiles: the per-source list in `TerrariumProvider.attribution()` (from the dataset's own

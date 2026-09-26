@@ -300,9 +300,12 @@ timeline. `SequenceManager._ensure_view()` now runs at the start of `_ready()` a
 any part is hidden or moved. It adds, as children of the `SequenceManager`, only what the scene
 lacks:
 
-- a `Camera3D` with this script, framed on the whole model (the world box of every part from
-  `collect_part_nodes()`, looked at from the south-east and above, at 1.9× its radius), with
-  `far` at 3000 m or more and `move_speed` scaled to the model;
+- a `Camera3D` with this script, framed on where the work is: `_action_box()`, the per-axis span
+  of the middle 80 % of part centres (from `collect_part_nodes()`) grown by half the median part
+  size. It looks from the south-east and above, at 1.6× that box's radius, with `far` at 3000 m or
+  more and `move_speed` scaled to it. Framing the whole model's box let the outermost parts (a
+  boundary wall, corner trees, a crane) push the camera back until the building was small in the
+  middle of the picture: 74 m out on the Galicia sample, 31 m now;
 - a `WorldEnvironment` with a procedural sky, when the world has no environment and the project
   sets no default one;
 - a `DirectionalLight3D` with shadows, when the tree has no directional light (a `GeoSun`
@@ -1466,6 +1469,11 @@ below possible at all.
 | `movie_mode_override` | `false` | Force movie mode on without recording |
 | `movie_duration_sec` | `60.0` | How long day 0 → last day should take |
 | `movie_end_hold_sec` | `2.0` | Hold on the finished structure before quitting |
+
+**What is drawn over the picture**: the date, top centre, and, when the scene has a
+`ConstructionTerrain`, its data credit (`TerrainData.attribution`, e.g. IGN's CC BY 4.0 line)
+bottom right. The terrain licences require that credit wherever the ground is shown, so every
+recording carries it without anyone remembering to add it.
 
 **`movie_mode_override` exists because otherwise the only way to see what a recording will
 do is to record one** — slow, and it writes a file every time. With it on, a plain Play

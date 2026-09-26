@@ -26,7 +26,7 @@ Quick reference for all public APIs in the 4D Construction Tool. For implementat
 - [Editor-side classes](#editor-side-classes) *(Phase 3)*
 - [IFC classes](#ifc-classes-ifc)
 - [Georeference classes](#georeference-classes-geo) *(0.5.0)*
-- [Terrain classes](#terrain-classes-terrain) *(0.5.0; levelled platforms after 0.5.0)*
+- [Terrain classes](#terrain-classes-terrain) *(0.5.0; levelled platforms 0.6.0)*
 - [Data Types](#data-types)
 
 ---
@@ -854,10 +854,11 @@ documented steps (a `SequenceManager` plus an imported model) has no camera, env
 and would run as an empty grey screen under a working timeline. For this run only, it adds as
 children of the `SequenceManager`:
 
-- `DefaultCamera`: a `Camera3D` with `free_look_camera.gd`, framed on `_model_box()` (the world box
-  of every part from `collect_part_nodes()`). It is placed south-east and above at 1.9× the box's
-  radius, with `far` ≥ 3000 m and `move_speed` scaled to the model. Only when
-  `get_viewport().get_camera_3d()` is null.
+- `DefaultCamera`: a `Camera3D` with `free_look_camera.gd`, framed on `_action_box()`. That is,
+  per axis, the middle 80 % of the part centres from `collect_part_nodes()`, grown by half the
+  median part size, so outlying site parts do not push the camera back. It is placed south-east
+  and above at 1.6× that box's radius, with `far` ≥ 3000 m and `move_speed` scaled to it. Only
+  when `get_viewport().get_camera_3d()` is null.
 - `DefaultEnvironment`: a `WorldEnvironment` with a procedural sky, filmic tonemapping and sky
   ambient light. Only when the world has neither an environment nor a project default one.
 - `DefaultSun`: a `DirectionalLight3D` with shadows. Only when the tree has no directional light

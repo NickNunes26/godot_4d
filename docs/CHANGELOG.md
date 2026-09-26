@@ -3,7 +3,21 @@
 Notable changes per release. The design reasoning behind each subsystem lives in the numbered
 docs in this folder; `README.md` is the as-built reference.
 
-## Unreleased
+## 0.6.0
+
+Levelled terrain platforms, IFC + MS Project workflow verified end to end from a fresh project,
+and fixes for a startup memory leak, a grey screen in camera-less scenes, hidden id-only static
+parts and garbled accented IFC text. Each item below.
+
+**Default camera framed on the work, not the whole site** (`runtime/sequence_manager.gd`,
+`_action_box()`). The camera `SequenceManager` adds to a scene without one framed the whole
+model's box. On a building with site works (boundary wall, trees in the plot's corners) that put
+it 74 m out, with the house small in the middle. It now frames the middle 80 % of part centres
+from 1.6× their radius: 31 m on the Galicia sample.
+
+**Movie recordings carry the terrain credit** (`_start_movie_run()`). The data licences (IGN's
+CC BY 4.0 for Spain) require the credit wherever the ground is shown. Movie mode now draws
+`TerrainData.attribution` bottom right, under the date, whenever the scene has a terrain.
 
 **Documentation brought up to date with everything below.** `04_API_REFERENCE.md` covers
 `has_install_parts()`, the one-day `get_part_states()` cache, the scan's early return,
