@@ -13,6 +13,14 @@ schedule's comments and throughout the saved scene. The IFC itself is correct (`
 Only strings with exactly that signature are decoded again; tests cover two- and three-byte
 sequences, text that is already right, and genuine Latin-1.
 
+**IFC + MS Project workflow documented and verified** (README, "From an IFC file and an MS
+Project plan"). Starting from only `galicia_model.ifc` and `galicia_model.xml` in a fresh project:
+Load IFC → mapping → Generate 4D Schedule → Import Project XML → Recalculate → Save to JSON. All
+46 tasks matched by name without a dialog, and 43 dependency links came in. Start and finish
+dates were identical to the hand-made schedule for all 46 actions, and so were types and static
+parts. The one difference is formwork, which neither format can carry: the README now says so
+and lists what to add.
+
 **End-to-end check in a fresh project** (Godot 4.7.2, GDIFC from the Asset Library, the addon
 from `main`, `models/galicia_model.ifc`). Every README test suite and the demo pass. So do
 Load IFC → mapping → automatic terrain → Generate 4D Schedule → sun → levelling → preview →

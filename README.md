@@ -67,9 +67,36 @@ This is the sequence verified end to end in a new project:
 7. **Start Preview** and drag the slider; **Stop Preview**; save.
 8. F5 (pick the scene as main scene the first time) → **Play**.
 
-An IFC property can only give each element one animation, so anything that is put up and later
-removed (scaffolding, formwork) comes out as permanent. Give it a `formwork` block in the
-Schedule Inspector (`docs/README.md`, "Formwork").
+### From an IFC file and an MS Project plan
+
+When the dates live in Microsoft Project, and you have only the `.ifc` and the plan exported as
+Project XML (`.xml`, not `.mpp`), follow steps 1–6 above, then:
+
+7. **Start Preview**, then **Import Project XML** and pick the plan. Tasks are matched to actions
+   by name, so the task names must be the element ids (a mapping dialog asks about any that are
+   not). Summary tasks are ignored. The import updates the dates and adds each task's
+   predecessors as `depends_on` / `lag_days`.
+8. **Recalculate**, then **Save to JSON**. Without the save, the imported dates are lost when
+   you stop the preview.
+9. **Stop Preview**, save, F5 → **Play**.
+
+**Generate 4D Schedule** has to come first: the import only updates actions that already exist.
+Verified end to end on the Galicia sample: all 46 tasks matched, with dates identical to the
+hand-made schedule.
+
+### What neither file carries: formwork
+
+An IFC property gives each element one animation, and Project XML has no notion of formwork. So
+anything that is put up and later removed (scaffolding, formwork) comes out as a permanent part,
+and elements poured in formwork get none. Add a `formwork` block to those actions in the Schedule
+Inspector (`docs/README.md`, "Formwork"), then **Save to JSON**. On the Galicia sample that is 10
+actions: footings, tie beams, ground slab, columns and floor slabs (panels), and the facade
+scaffolding struck after the stonework (`prefix: Z99_Andamio`). Regenerating from the IFC later
+keeps hand-corrected types, but not these blocks.
+
+If you bring an existing `construction_steps.json` along with its
+`construction_steps.ifc_profile.json`, skip **Generate 4D Schedule**. Load IFC reuses the saved
+mapping without asking, and Generate would replace the hand-made schedule.
 
 ## Terrain
 
@@ -125,6 +152,9 @@ None of them use the network.
 - Animation offsets (drop height, rise depth, crane hover/pickup) are absolute metres, tuned for
   building-scale models.
 - IFC schedule dates must be ISO (`YYYY-MM-DD`), and importing needs GDIFC.
+- GDIFC (1.1.0-alpha) mis-decodes accented IFC text ("Formigón" arrives as "FormigÃ³n"). The
+  dock repairs it on import (`GDIFC4DAdapter.repair_text()`); scenes imported earlier keep the
+  garbled labels until re-imported.
 - Regenerating a schedule from IFC keeps hand-corrected `type`/`batch`, but not `formwork` blocks.
 - Parts of an action are spread along one continuous curve over its whole window rather than
   bucketed per day (`docs/README.md`, "Known limitations").
