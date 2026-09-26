@@ -5,6 +5,15 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## Unreleased
 
+**Memory leak at startup fixed.** `ConstructionSchedule.get_part_states()` cached every day it was
+ever asked for, and the automatic first-frame `scan_collisions()` asks for about 33,000 days (every
+0.01 day of the schedule) × one entry per part. The Pazo Xilloi scene grew by about 90 MB/s to more
+than 7 GB. Now only the last day is kept, which is all scrub-then-query needs. Separately,
+`scan_collisions()` returns at once when no part uses `install`: `CollisionQuery` only ever checks
+`install` movers, so nothing could be found, and the scan used to walk every part through the
+whole schedule for over a minute before the first frame. Memory now stays flat at about 450 MB.
+
+
 **Project XML import — two fixes** (`editor/schedule_project_xml_io.gd`,
 `apply_task_onto_action()`). Both found by round-tripping a real 46-activity plan
 (`models/galicia_model.xml`) through the dock's own importer; neither had a test.

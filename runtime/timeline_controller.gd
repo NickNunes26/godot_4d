@@ -58,7 +58,7 @@ func set_schedule(schedule: ConstructionSchedule, building_parts: Dictionary, cr
 	_building_parts = building_parts
 	_cranes = cranes
 	# retract_crane=false: nothing has moved yet at initial setup, so there's
-	# nothing to park. This also sidesteps a node-readiness ordering issue —
+	# nothing to park. This also sidesteps a node-readiness ordering issue â€”
 	# this runs inside SequenceManager._ready(), and if a crane is a later
 	# sibling in the scene tree its own _ready() (which sets up _arm/_hook/
 	# _rope) may not have run yet.
@@ -155,6 +155,10 @@ func get_collisions() -> Array:
 ## project this is a deliberate one-shot scan, not something to call per frame.
 func scan_collisions(sample_step: float = 0.01) -> Array:
 	if not _schedule:
+		return []
+	# Nothing can collide without an install mover, and stepping every part
+	# through every 0.01 day to prove it takes minutes on a large model.
+	if not _schedule.has_install_parts():
 		return []
 	var date_range = _schedule.get_date_range()
 	var saved_day = current_day

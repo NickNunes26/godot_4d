@@ -33,7 +33,12 @@ extends RefCounted
 var _part_schedules: Dictionary = {} # part_name -> { start_day, end_day, anim_type }
 var _min_day: float = INF
 var _max_day: float = -INF
-var _state_cache: Dictionary = {} # int -> states
+# Only the most recent day is kept: scrub_to() and get_collisions() ask for the
+# same day back to back, which is all the cache is for. Keeping every day ever
+# asked for grew without bound -- a full scan_collisions() over a ~330-day
+# schedule is ~33,000 days x one entry per part, several GB.
+var _state_cache_key: int = -1
+var _state_cache: Dictionary = {}
 # Day 0's real-world unix epoch (the earliest start_date across all actions) --
 # lets day_to_date_string() convert any resolved day number back to a real
 # calendar date. Set once in _init(), read-only after.
@@ -979,8 +984,8 @@ func get_fill_up_units() -> Array:
 ## current_day.
 func get_part_states(current_day: float) -> Dictionary:
 	var cache_key = int(round(current_day * 100.0))
-	if _state_cache.has(cache_key):
-		return _state_cache[cache_key]
+	if cache_key == _state_cache_key:
+		return _state_cache
 
 	var states = {}
 	for part_name in _part_schedules.keys():
@@ -1000,8 +1005,18 @@ func get_part_states(current_day: float) -> Dictionary:
 			"progress": progress
 		}
 
-	_state_cache[cache_key] = states
+	_state_cache_key = cache_key
+	_state_cache = states
 	return states
+
+## Whether any part is animated with "install" -- the only kind of part
+## CollisionQuery ever checks as a mover. Without one no collision can exist
+## on any day, so a full-schedule scan can be skipped outright.
+func has_install_parts() -> bool:
+	for sched in _part_schedules.values():
+		if sched.anim_type == "install":
+			return true
+	return false
 
 ## Phase 2: flags parts actively being installed whose actual mesh geometry
 ## overlaps any other currently-present part's actual mesh geometry -- see
