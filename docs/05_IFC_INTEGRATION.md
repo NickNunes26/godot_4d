@@ -99,9 +99,12 @@ GDIFC's axes (verified on Godot 4.6.2): IFC (x = east, y = north, z = up) arrive
 - **One action per distinct Element ID**, sorted by start date, `target_prefix` = the id.
 - If parts sharing an id have different dates, the action spans the **widest window**.
 - `duration_days` is an inclusive calendar-day span.
-- **Parts with no Element ID or no usable date** become `static_prefixes` entries (by structural
-  zone): they render from the first frame and never animate. Without this they would stay hidden
-  for the whole run.
+- **Parts with no Element ID or no usable date** become `static_prefixes` entries: they render
+  from the first frame and never animate. Without this they would stay hidden for the whole run.
+  The prefix is the part's actual name stem. For a part with an id but no dates (existing ground,
+  say) that is the **id**. For a part with no id it is its **structural zone** (`<zone>_`), since
+  the adapter names those `<zone>_<original name>`. Previously every such part got its zone,
+  which matched nothing for a part that had an id: that part stayed hidden all run.
 - `batch` is written explicitly: `true` for every type except `install` and `drop_in` (discrete
   units placed one after another). One id covering several meshes normally means one operation
   split for modelling convenience.

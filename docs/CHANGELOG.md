@@ -5,6 +5,13 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## Unreleased
 
+**Dated-less parts with an id are shown again** (`ifc/ifc_schedule_generator.gd`). A part with
+an Element ID but no usable date became a `static_prefixes` entry named after its *zone*
+(`IfcSite_22_`). The adapter had named the part after its *id* (`Z00_Terreo`), so the prefix
+matched nothing and the part stayed hidden all run (the Galicia model's existing ground). The
+prefix is now the id when there is one. `test_ifc_mapping.gd` checks the exact list; the old
+check (`has("ZoneOne_")`) passed only thanks to a different, uncoded part.
+
 **Levelled platforms** (new, see `10_TERRAIN.md` "Levelled platforms")
 - `ConstructionTerrain.platforms`: building pads, excavation pits and the like, cut and filled into
   the downloaded ground with banks at a chosen slope. Empty keeps the natural ground (bridges).

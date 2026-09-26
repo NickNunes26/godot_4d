@@ -92,7 +92,9 @@ func _init() -> void:
 	_check("K1 batched (not a staggered type)", by_id["K1"].batch, true)
 	_check("K2 falls back to default type", by_id["K2"].type, "scale_up")
 	_check("label comes from the mapped property", String(by_id["K1"].comment).begins_with("Footing"), true)
-	_check("K3 + uncoded parts become static context", data.static_prefixes.has("ZoneOne_"), true)
+	# K3 has an id but no usable date: its prefix is its own name, which is what
+	# the adapter called it -- not its zone, which would match nothing.
+	_check("K3 and the uncoded part become static context, by their names", data.static_prefixes, ["K3", "ZoneOne_"])
 
 	print("=== generator, duration mode")
 	var md := IfcMapping.from_dict(m.to_dict())

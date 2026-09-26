@@ -64,13 +64,17 @@ static func generate(parts: Variant, mapping: IfcMapping, existing: Dictionary =
 		var id_value = IfcMapping.get_value(props, mapping.element_id)
 		var dates := _dates_for(props, mapping)
 
-		# No id, or no usable date, means nothing to schedule -- record its
-		# zone as static context instead of dropping it (initialize_parts()
-		# hides and zero-scales every *registered, non-static* part, so a part
-		# left out of the JSON entirely would stay invisible for the whole run).
-		if id_value == null or str(id_value).strip_edges().is_empty() or dates.is_empty():
-			var zone := _zone_prefix_of(part)
-			contextual[zone] = contextual.get(zone, 0) + 1
+		# No id, or no usable date, means nothing to schedule -- record it as
+		# static context instead of dropping it (initialize_parts() hides and
+		# zero-scales every *registered, non-static* part, so a part left out of
+		# the JSON entirely would stay invisible for the whole run). The prefix
+		# must match the part's actual name: the adapter names a part with an id
+		# after that id (existing ground, say, carries one but no dates) and only
+		# falls back to "<zone>_<name>" when it has none.
+		var has_id: bool = id_value != null and not str(id_value).strip_edges().is_empty()
+		if not has_id or dates.is_empty():
+			var prefix := str(id_value).strip_edges() if has_id else _zone_prefix_of(part)
+			contextual[prefix] = contextual.get(prefix, 0) + 1
 			continue
 
 		var key := str(id_value)
