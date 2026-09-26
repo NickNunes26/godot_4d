@@ -337,7 +337,12 @@ func apply_task_onto_action(action: Dictionary, task: Dictionary, uid_to_action_
 
 	var own_id: String = ConstructionSchedule._action_id(action)
 	var dep_ids: Array = []
+	# Seeded from the first link that resolves, NOT from 0: a lead (negative lag, e.g.
+	# formwork stripping starting partway through a pour, or quoins laid while the wall
+	# they trim is still rising) is a perfectly ordinary Finish-to-Start link, and
+	# maxi(0, -259200) silently turned every one of them into no lag at all.
 	var max_lag_tenths_min: int = 0
+	var have_lag: bool = false
 	for pred in task.get("predecessors", []):
 		if pred.get("type", -1) != 1:
 			continue # not Finish-to-Start -- unsupported relationship type here
@@ -348,12 +353,18 @@ func apply_task_onto_action(action: Dictionary, task: Dictionary, uid_to_action_
 		if dep_id == own_id or dep_ids.has(dep_id):
 			continue
 		dep_ids.append(dep_id)
-		max_lag_tenths_min = maxi(max_lag_tenths_min, pred.get("lag", 0))
+		var pred_lag: int = pred.get("lag", 0)
+		max_lag_tenths_min = pred_lag if not have_lag else maxi(max_lag_tenths_min, pred_lag)
+		have_lag = true
 
 	if not dep_ids.is_empty():
 		action["depends_on"] = dep_ids[0] if dep_ids.size() == 1 else dep_ids
 		action.erase("start_date")
-		var lag_days: float = max_lag_tenths_min / 600.0 # tenths of a minute -> days
+		# Tenths of a minute -> days: 24 h * 60 min * 10, the same factor export_xml()
+		# writes with. This read 600 (tenths of a minute -> *hours*), so every lag came
+		# back 24x too long -- a 2-day lag re-imported as 48 days, silently, and the
+		# addon's own export could not survive its own import.
+		var lag_days: float = max_lag_tenths_min / 14400.0
 		if lag_days != 0.0:
 			action["lag_days"] = lag_days
 		else:

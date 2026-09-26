@@ -3,6 +3,26 @@
 Notable changes per release. The design reasoning behind each subsystem lives in the numbered
 docs in this folder; `README.md` is the as-built reference.
 
+## Unreleased
+
+**Project XML import — two fixes** (`editor/schedule_project_xml_io.gd`,
+`apply_task_onto_action()`). Both found by round-tripping a real 46-activity plan
+(`models/galicia_model.xml`) through the dock's own importer; neither had a test.
+- **A `LinkLag` came back 24× too long.** Export writes lag in tenths of a minute
+  (`days × 24 × 60 × 10`, correct MSPDI); import divided by `600`, which is tenths of a
+  minute to *hours*, not to days. A 2-day lag re-imported as 48 days, silently — so the
+  addon's own export could not survive its own import. Now `/ 14400.0`.
+- **Negative lags were dropped.** `max_lag_tenths_min` was seeded at `0` and combined with
+  `maxi()`, so any lead (`maxi(0, -259200)`) collapsed to no lag at all. Leads are ordinary
+  Finish-to-Start links — formwork stripping starting partway through a pour, quoins laid
+  while the wall they trim is still rising. Now seeded from the first link that resolves.
+
+Still open, deliberately not changed here: `export_xml()` writes `Start` at 09:00 and
+`Finish` at 18:00, while `_task_duration_days()` reads a duration as literally
+Finish − Start. Its own output therefore re-imports 0.375 days longer per task (measured:
+a 10-day action reads back as 10.375). Writing the same time of day at both ends would fix
+it, at the cost of changing the format the exporter has always emitted.
+
 ## 0.5.0
 
 **Terrain** (new, see `10_TERRAIN.md`)
