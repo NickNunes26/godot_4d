@@ -5,6 +5,13 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## Unreleased
 
+**The dock no longer draws over the Scene tree** (`editor/timeline_dock.tscn`). Its root was a
+plain `Control` whose `VBox` was anchored to fill it and allowed to grow both ways, with nothing
+clipping it. Once Start Preview added the timeline and the inspector grid, the content needed more
+height than the dock had, and spilled upwards over the Scene tree and downwards past the dock. The
+root is now a `ScrollContainer` (vertical scroll only, clips its content), so the dock keeps its
+size and scrolls instead. Node paths are unchanged (`$VBox/...`), so no code changed.
+
 **Instructions for everybody, in English and Spanish.** The README is now bilingual: each section
 is an English paragraph followed by its Spanish version, with the developer material kept in
 English. Two complete step-by-step guides, [GUIDE.md](../GUIDE.md) and [GUIA.md](../GUIA.md),
