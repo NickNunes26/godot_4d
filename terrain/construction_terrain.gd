@@ -22,13 +22,13 @@ extends Node3D
 			rebuild()
 @export var geo_origin: GeoOrigin:
 	set(value):
-		if geo_origin and geo_origin.changed.is_connected(update_placement):
-			geo_origin.changed.disconnect(update_placement)
+		if geo_origin and geo_origin.changed.is_connected(_on_origin_changed):
+			geo_origin.changed.disconnect(_on_origin_changed)
 		geo_origin = value
-		if geo_origin and not geo_origin.changed.is_connected(update_placement):
-			geo_origin.changed.connect(update_placement)
+		if geo_origin and not geo_origin.changed.is_connected(_on_origin_changed):
+			geo_origin.changed.connect(_on_origin_changed)
 		if is_inside_tree():
-			update_placement()
+			_on_origin_changed()
 ## The parts container `geo_origin` describes, relative to this node.
 @export var anchor_path: NodePath
 ## Tiled leaf-litter / rock textures close to the camera (see GroundTextures).
@@ -49,21 +49,54 @@ extends Node3D
 			rebuild()
 ## Where GroundTextures keeps the near textures.
 @export var ground_textures_dir: String = GroundTextures.DEFAULT_DIR
+## Levelled areas cut and filled into the ground, applied in order (a building
+## pad, then its excavation pit). Empty: the natural ground as downloaded --
+## right for a bridge or anything else built on the land as it is. Each one can
+## follow its earthwork activities on the timeline. See TerrainPlatform.
+@export var platforms: Array[TerrainPlatform] = []:
+	set(value):
+		for p in platforms:
+			if p and p.changed.is_connected(_queue_rebuild):
+				p.changed.disconnect(_queue_rebuild)
+		platforms = value
+		for p in platforms:
+			if p and not p.changed.is_connected(_queue_rebuild):
+				p.changed.connect(_queue_rebuild)
+		_queue_rebuild()
+
+## Every ConstructionTerrain joins this group, so the timeline can find them.
+const GROUP := "construction_terrain"
 
 const _SHADER := preload("res://addons/construction_4d_tool/terrain/ground.gdshader")
 const _GENERATED := "_generated"
 
 var _material: ShaderMaterial
+var _grading: TerrainGrading
+var _progress := PackedFloat32Array()
+var _rebuild_queued := false
+
+func _enter_tree() -> void:
+	add_to_group(GROUP)
 
 func _ready() -> void:
 	rebuild()
 
+## The platforms' cut/fill, or null when there are none (natural ground).
+func grading() -> TerrainGrading:
+	return _grading
+
 ## Regenerates the mesh, material and collision from `data`.
 func rebuild() -> void:
+	_rebuild_queued = false
 	_clear_generated()
 	update_placement()
+	_grading = null
 	if not data or data.grid_n < 2 or data.heights.size() != data.grid_n * data.grid_n:
 		return
+	if not platforms.is_empty():
+		_grading = TerrainGrading.compute(data, platforms, _container_to_terrain())
+	_progress.resize(TerrainGrading.MAX_PLATFORMS)
+	_progress.fill(1.0)
 	var n := data.grid_n
 	var size := (n - 1) * data.cell
 
@@ -72,8 +105,10 @@ func rebuild() -> void:
 	plane.subdivide_width = n - 2
 	plane.subdivide_depth = n - 2
 	# Heights are applied in the shader, so tell culling how tall it really is.
-	plane.custom_aabb = AABB(Vector3(-size / 2.0, data.min_height, -size / 2.0),
-		Vector3(size, maxf(data.max_height - data.min_height, 0.1), size))
+	var low := minf(data.min_height, _grading.min_height) if _grading else data.min_height
+	var high := maxf(data.max_height, _grading.max_height) if _grading else data.max_height
+	plane.custom_aabb = AABB(Vector3(-size / 2.0, low, -size / 2.0),
+		Vector3(size, maxf(high - low, 0.1), size))
 
 	var mesh := MeshInstance3D.new()
 	mesh.name = "Ground"
@@ -94,7 +129,9 @@ func rebuild() -> void:
 		var shape := HeightMapShape3D.new()
 		shape.map_width = data.collision_n
 		shape.map_depth = data.collision_n
-		shape.map_data = data.collision_map
+		# Collision is the finished ground: platforms complete, whatever day the
+		# timeline shows. Rebuilding a 1025^2 height field per frame is not worth it.
+		shape.map_data = _grading.patched_collision() if _grading else data.collision_map
 		var col := CollisionShape3D.new()
 		col.shape = shape
 		col.scale = Vector3.ONE * data.collision_spacing()
@@ -115,6 +152,13 @@ func _apply_material() -> void:
 	m.set_shader_parameter("ortho_detail", data.detail_texture)
 	m.set_shader_parameter("detail_rect", _local_rect(data.detail_rect))
 	m.set_shader_parameter("grade_ortho", grade_orthophoto)
+	m.set_shader_parameter("has_grading", _grading != null)
+	if _grading:
+		var r := _grading.rect
+		m.set_shader_parameter("grading", ImageTexture.create_from_image(_grading.image))
+		m.set_shader_parameter("grading_rect", Vector4i(r.position.x, r.position.y, r.size.x, r.size.y))
+		m.set_shader_parameter("grade_bare", _grading.bare_flags())
+		m.set_shader_parameter("grade_progress", _progress)
 	var tex := GroundTextures.load_all(ground_textures_dir) if use_near_textures else {}
 	m.set_shader_parameter("use_near", not tex.is_empty())
 	for key in tex:
@@ -133,18 +177,69 @@ func _local_rect(r: PackedFloat64Array) -> Vector4:
 func update_placement() -> void:
 	if not data or not geo_origin or not geo_origin.has_position():
 		return
-	var anchor_tf := Transform3D()
-	var anchor := get_node_or_null(anchor_path) as Node3D
-	if anchor and anchor.get_parent() == get_parent():
-		anchor_tf = anchor.transform
-	elif anchor:
-		anchor_tf = (get_parent() as Node3D).global_transform.affine_inverse() * anchor.global_transform if get_parent() is Node3D else anchor.global_transform
+	var anchor_tf := _anchor_transform()
 	var offset := Vector3(data.center_e - geo_origin.easting, -geo_origin.height, -(data.center_n - geo_origin.northing))
 	transform = anchor_tf * geo_origin.map_frame_transform() * Transform3D(Basis(), offset)
 
-## Ground height (absolute metres) under a map point; NAN outside the grid.
+## The parts container's transform in this node's parent's space (identity
+## without one).
+func _anchor_transform() -> Transform3D:
+	var anchor := get_node_or_null(anchor_path) as Node3D
+	if anchor and anchor.get_parent() == get_parent():
+		return anchor.transform
+	elif anchor:
+		return (get_parent() as Node3D).global_transform.affine_inverse() * anchor.global_transform if get_parent() is Node3D else anchor.global_transform
+	return Transform3D()
+
+## Parts container space -> this node's space, where platforms are applied.
+func _container_to_terrain() -> Transform3D:
+	return transform.affine_inverse() * _anchor_transform()
+
+## Moving the origin moves the terrain under the model, so the platforms
+## (drawn in the model's space) land on different grid points.
+func _on_origin_changed() -> void:
+	update_placement()
+	if not platforms.is_empty():
+		_queue_rebuild()
+
+func _queue_rebuild() -> void:
+	if _rebuild_queued or not is_inside_tree():
+		return
+	_rebuild_queued = true
+	rebuild.call_deferred()
+
+## Ground height (absolute metres) under a map point, platforms included;
+## NAN outside the grid.
 func height_at(e: float, n: float) -> float:
-	return data.height_at(e, n) if data else NAN
+	if not data:
+		return NAN
+	return _grading.height_at(e, n) if _grading else data.height_at(e, n)
+
+## Shows each platform as far along as its activities are on `day`.
+func follow_schedule(schedule: ConstructionSchedule, day: float) -> void:
+	if not _grading or not _material:
+		return
+	var p := PackedFloat32Array()
+	p.resize(TerrainGrading.MAX_PLATFORMS)
+	p.fill(1.0)
+	for i in _grading.used.size():
+		p[i] = _grading.used[i].progress_on(schedule, day)
+	if p != _progress:
+		_progress = p
+		_material.set_shader_parameter("grade_progress", _progress)
+
+## Back to the finished ground (every platform complete).
+func show_finished() -> void:
+	follow_schedule(null, 0.0)
+
+## Called by TimelineController.scrub_to() for every terrain in the tree.
+static func update_all(tree: SceneTree, schedule: ConstructionSchedule, day: float) -> void:
+	for t in tree.get_nodes_in_group(GROUP):
+		(t as ConstructionTerrain).follow_schedule(schedule, day)
+
+static func reset_all(tree: SceneTree) -> void:
+	for t in tree.get_nodes_in_group(GROUP):
+		(t as ConstructionTerrain).show_finished()
 
 func _clear_generated() -> void:
 	_material = null

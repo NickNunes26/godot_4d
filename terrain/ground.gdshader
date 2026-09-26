@@ -10,6 +10,12 @@
 // otherwise read as white). Close to the camera (35 -> 160 m) it blends into
 // tiled PBR textures: leaf litter on flat ground, rock on slopes (normal.y
 // 0.93 -> 0.70), tinted 45 % towards the orthophoto and darkened.
+//
+// Platforms (TerrainGrading): inside `grading_rect` each grid point carries up
+// to two height changes, each tagged with its platform. A change is applied
+// times that platform's timeline progress, so the ground morphs from natural to
+// levelled during its earthworks. Levelled ground and its banks are drawn as
+// bare earth (a gravelly tint of the rock texture near the camera).
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
 
@@ -44,11 +50,47 @@ uniform float slope_flat = 0.93;
 uniform float slope_steep = 0.70;
 uniform float near_tint = 0.45;
 
+uniform bool has_grading = false;
+uniform sampler2D grading : filter_nearest, repeat_disable; // RGBAF, see TerrainGrading
+uniform ivec4 grading_rect = ivec4(0); // first column, first row, columns, rows
+uniform float grade_progress[16];
+uniform float grade_bare[16];
+uniform vec3 earth_color : source_color = vec3(0.55, 0.44, 0.31);
+
 varying vec2 terrain_xz;
 varying float up_y;
+varying float earth;
+
+// Code: platform slot + 1 (0 = none), + 0.5 inside the platform's footprint.
+int slot_of(float code) {
+	return int(floor(code)) - 1;
+}
+
+float slot_progress(float code) {
+	int i = slot_of(code);
+	return i < 0 ? 0.0 : grade_progress[min(i, 15)];
+}
+
+float slot_earth(float change, float code) {
+	int i = slot_of(code);
+	if (i < 0) return 0.0;
+	float w = fract(code) > 0.25 ? 1.0 : clamp(abs(change) / 0.3, 0.0, 1.0);
+	return w * grade_progress[min(i, 15)] * grade_bare[min(i, 15)];
+}
+
+vec4 grading_at(ivec2 ij) {
+	ivec2 g = ij - grading_rect.xy;
+	if (!has_grading || g.x < 0 || g.y < 0 || g.x >= grading_rect.z || g.y >= grading_rect.w) {
+		return vec4(0.0);
+	}
+	return texelFetch(grading, g, 0);
+}
 
 float h_at(ivec2 ij) {
-	return texelFetch(heightmap, clamp(ij, ivec2(0), ivec2(grid_n - 1)), 0).r;
+	ij = clamp(ij, ivec2(0), ivec2(grid_n - 1));
+	float h = texelFetch(heightmap, ij, 0).r;
+	vec4 t = grading_at(ij);
+	return h + t.r * slot_progress(t.g) + t.b * slot_progress(t.a);
 }
 
 void vertex() {
@@ -64,6 +106,8 @@ void vertex() {
 	BINORMAL = normalize(cross(NORMAL, TANGENT));
 	terrain_xz = VERTEX.xz;
 	up_y = NORMAL.y;
+	vec4 t = grading_at(clamp(ij, ivec2(0), ivec2(grid_n - 1)));
+	earth = max(slot_earth(t.r, t.g), slot_earth(t.b, t.a));
 }
 
 vec3 rgb2hsv(vec3 c) {
@@ -129,6 +173,9 @@ void fragment() {
 
 	float rough = 0.92;
 	vec3 albedo = ortho;
+	vec3 earth_col = earth_color;
+	// The weight is interpolated across 5 m triangles; sharpen it into an edge.
+	float earth_w = smoothstep(0.25, 0.75, earth);
 	if (use_near) {
 		float dist = length(VERTEX);
 		float far_t = clamp((dist - near_start) / (near_end - near_start), 0.0, 1.0);
@@ -141,7 +188,16 @@ void fragment() {
 		rough = mix(texture(leaves_roughness, luv).r, texture(rock_roughness, ruv).r, slope_t);
 		NORMAL_MAP = mix(texture(leaves_normal, luv).rgb, texture(rock_normal, ruv).rgb, slope_t);
 		NORMAL_MAP_DEPTH = 1.0 - far_t;
+		if (earth_w > 0.0) {
+			// Gravelly bare earth: the rock texture's detail carried on the earth colour.
+			vec3 rock = texture(rock_albedo, ruv).rgb;
+			float lum = dot(rock, vec3(0.299, 0.587, 0.114));
+			earth_col = mix(earth_col * (0.55 + lum), earth_col, far_t);
+			NORMAL_MAP = mix(NORMAL_MAP, texture(rock_normal, ruv).rgb, earth_w);
+		}
 	}
+	albedo = mix(albedo, earth_col, earth_w);
+	rough = mix(rough, 0.95, earth_w);
 	ALBEDO = albedo;
 	ROUGHNESS = rough;
 	SPECULAR = 0.2;

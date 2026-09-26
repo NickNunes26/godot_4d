@@ -293,6 +293,8 @@ func stop_preview() -> void:
 		if is_instance_valid(sun):
 			sun.transform = _sun_snapshot[sun]
 			sun.set("_date", {})
+	# The edited scene shows the finished ground, not wherever preview left it.
+	ConstructionTerrain.reset_all(get_tree())
 	_sun_snapshot.clear()
 
 	# Generated formwork is a view of the schedule, not part of the scene, and

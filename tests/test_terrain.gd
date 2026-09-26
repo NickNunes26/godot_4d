@@ -26,6 +26,8 @@ func _initialize() -> void:
 	_test_providers()
 	_test_data_and_check()
 	_test_world_files()
+	_test_grading()
+	_test_platforms_from_model()
 
 ## The node test needs a live tree, which a --script run only has once the main
 ## loop is going.
@@ -36,6 +38,7 @@ func _process(_delta: float) -> bool:
 		return false
 	_ran_node_test = true
 	_test_terrain_node()
+	_test_graded_node()
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if _fails == 0 else "FAILED", _fails])
 	quit(1 if _fails > 0 else 0)
 	return false
@@ -305,4 +308,141 @@ func _test_terrain_node() -> void:
 	_check("generated children are not saved", mesh != null and mesh.owner == null)
 	terrain.collision_enabled = false
 	_check("collision can be turned off", terrain.get_node_or_null("GroundBody") == null or terrain.get_node("GroundBody").is_queued_for_deletion())
+	sm.queue_free()
+
+func _square(half: float, center := Vector2.ZERO) -> PackedVector2Array:
+	return PackedVector2Array([center + Vector2(-half, -half), center + Vector2(half, -half),
+		center + Vector2(half, half), center + Vector2(-half, half)])
+
+func _platform(footprint: PackedVector2Array, level: float, slope: float) -> TerrainPlatform:
+	var p := TerrainPlatform.new()
+	p.footprint = footprint
+	p.level = level
+	p.bank_slope = slope
+	return p
+
+## Grid of _make_data(40, 5.0, 600.0): points at x = (c - 19.5) * 5, ground
+## 600 + 0.1 * x. Platforms are given in the terrain's own space (identity).
+func _test_grading() -> void:
+	print("=== Terrain platforms (cut / fill)")
+	var d := _make_data(40, 5.0, 600.0)
+	_check("no platforms: nothing to grade", TerrainGrading.compute(d, [], Transform3D()) == null)
+	var off := _platform(_square(20.0), 600.0, 2.0)
+	off.enabled = false
+	_check("disabled platforms are skipped", TerrainGrading.compute(d, [off], Transform3D()) == null)
+
+	var pad := _platform(_square(20.0), 600.0, 2.0)
+	var g := TerrainGrading.compute(d, [pad], Transform3D())
+	_check("pad graded", g != null)
+	# (c=20, r=20) is x = z = 2.5, inside: natural 600.25.
+	_near("inside the pad the ground is at its level", d.heights[20 * 40 + 20] + g.change_at(20, 20), 600.0, 1e-4)
+	# c=24: x = 22.5, 2.5 m out: within one cell diagonal (7.07 m), so levelled too.
+	_near("points within a cell diagonal are levelled", d.heights[20 * 40 + 24] + g.change_at(24, 20), 600.0, 1e-4)
+	# c=26: x = 32.5, 12.5 m out, 5.43 past the levelled ring; the bank allows 5.43 / 2 above.
+	_near("bank limits the ground beyond the ring", d.heights[20 * 40 + 26] + g.change_at(26, 20), 600.0 + (12.5 - 5.0 * sqrt(2.0)) / 2.0, 1e-3)
+	# c=28: x = 42.5; the bank would allow 7.7 m, the ground is 4.25 m up.
+	_near("ground beyond the bank is untouched", g.change_at(28, 20), 0.0, 1e-6)
+	_near("far away nothing changes", g.change_at(0, 0), 0.0, 1e-6)
+	_check("cut on the high side, fill on the low side", g.cut_m3 > 0.0 and g.fill_m3 > 0.0,
+		"cut=%.1f fill=%.1f" % [g.cut_m3, g.fill_m3])
+	_check("only the changed area is kept", g.rect.size.x < 20 and g.rect.size.y < 20, str(g.rect))
+	_near("height_at follows the platform", g.height_at(500002.5, 4399997.5), 600.0, 1e-3)
+
+	var pit := _platform(_square(5.0), 597.0, 0.5)
+	var g2 := TerrainGrading.compute(d, [pad, pit], Transform3D())
+	_near("a pit is dug into the pad", d.heights[20 * 40 + 20] + g2.change_at(20, 20), 597.0, 1e-4)
+	var tex := g2.image.get_pixel(20 - g2.rect.position.x, 20 - g2.rect.position.y)
+	_near("slot 0 is the pad step", tex.r, -0.25, 1e-4)
+	_near("slot 1 is the pit step", tex.b, -3.0, 1e-4)
+	_near("slot codes: pad inside, pit inside", tex.g + tex.a * 10.0, 1.5 + 25.0, 1e-4)
+	var col := g2.patched_collision()
+	_near("collision follows the pit", col[32 * 65 + 32] * d.collision_spacing(), 597.0, 1e-3)
+	_near("collision far away is unchanged", col[2 * 65 + 2], d.collision_map[2 * 65 + 2], 1e-6)
+
+	var cliff := _platform(_square(20.0), 590.0, 0.0)
+	var g3 := TerrainGrading.compute(d, [cliff], Transform3D())
+	_near("slope 0: no bank beyond the levelled ring", g3.change_at(26, 20), 0.0, 1e-6)
+
+	# Timing: natural before the activity, levelled after, linear between.
+	var sched := ConstructionSchedule.new({"steps": [{"actions": [
+		{"id": "E0", "target_prefix": "Nothing", "type": "fade_in", "start_date": "2027-03-01", "duration_days": 2},
+		{"id": "E1", "target_prefix": "Nothing", "type": "fade_in", "duration_days": 10, "depends_on": "E0"}]}]},
+		{}, SpatialGrouper.new(), {})
+	var timed := _platform(_square(20.0), 600.0, 2.0)
+	timed.activities = PackedStringArray(["E1"])
+	var span := sched.get_action_day_range("E1")
+	if span.is_empty():
+		_check("schedule resolves an action with no parts", false, "get_action_day_range(E1) is empty")
+	else:
+		_near("before the activity: natural", timed.progress_on(sched, span.start_day - 1.0), 0.0, 1e-6)
+		_near("halfway", timed.progress_on(sched, (span.start_day + span.finish_day) / 2.0), 0.5, 1e-6)
+		_near("after: levelled", timed.progress_on(sched, span.finish_day + 1.0), 1.0, 1e-6)
+	timed.activities = PackedStringArray(["NoSuchAction"])
+	_near("unknown activity: levelled from day 0", timed.progress_on(sched, 0.0), 1.0, 1e-6)
+
+## A small "building": a ground slab, a wall on it, a dig and a footing under it.
+func _test_platforms_from_model() -> void:
+	print("=== Platforms from a model")
+	var container := Node3D.new()
+	var add := func(name: String, pos: Vector3, size: Vector3):
+		var mi := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = size
+		mi.mesh = box
+		mi.name = name
+		mi.position = pos + size / 2.0
+		container.add_child(mi)
+	add.call("Ground", Vector3(-15, -0.3, -10), Vector3(30, 0.3, 20))
+	add.call("Wall", Vector3(-6, 0.0, -4), Vector3(12, 3.0, 0.5))
+	add.call("Dig_1", Vector3(-7, -2.0, -5), Vector3(14, 1.7, 10))
+	add.call("Footing", Vector3(-5, -2.0, -3), Vector3(2, 0.7, 2))
+	var actions := [
+		{"id": "A1", "prefix": "Topsoil", "text": "A1 Retirada de terra vexetal"},
+		{"id": "A2", "prefix": "Dig", "text": "A2 Escavación ata cota"},
+		{"id": "A3", "prefix": "Wall", "text": "A3 Muros"}]
+	var list := TerrainGrading.platforms_from_model(container, actions, 2.0, 1.5)
+	_check("a pad and a pit", list.size() == 2, str(list.size()))
+	if list.size() == 2:
+		var pad: TerrainPlatform = list[0]
+		var pit: TerrainPlatform = list[1]
+		_near("pad at the bottom of the widest resting part", pad.level, -0.3, 1e-4)
+		_near("pad covers the model plus the margin (x)", pad.footprint[1].x - pad.footprint[0].x, 34.0, 1e-4)
+		_check("pad follows the levelling activity", pad.activities == PackedStringArray(["A1"]), str(pad.activities))
+		_near("pit down to the lowest part", pit.level, -2.0, 1e-4)
+		_near("pit is the drawn dig, no extra room", pit.footprint[1].x - pit.footprint[0].x, 14.0, 1e-4)
+		_check("pit follows the excavation activity", pit.activities == PackedStringArray(["A2"]), str(pit.activities))
+		_check("pit banks are steep", pit.bank_slope <= 0.5)
+	container.free()
+
+## The node: platforms move the ground's bounds and height, the timeline
+## blends them, and clearing them gives the natural ground back.
+func _test_graded_node() -> void:
+	print("=== ConstructionTerrain with platforms")
+	var sm := Node3D.new()
+	root.add_child(sm)
+	var container := Node3D.new()
+	sm.add_child(container)
+	var d := _make_data(40, 5.0, 600.0)
+	var terrain := ConstructionTerrain.new()
+	terrain.use_near_textures = false
+	sm.add_child(terrain)
+	terrain.anchor_path = terrain.get_path_to(container)
+	terrain.data = d
+	_check("natural ground: no grading", terrain.grading() == null)
+	var list: Array[TerrainPlatform] = [_platform(_square(20.0), 580.0, 1.0)]
+	terrain.platforms = list
+	terrain.rebuild()
+	_check("platform graded", terrain.grading() != null)
+	_near("height_at sees the platform", terrain.height_at(500002.5, 4399997.5), 580.0, 1e-3)
+	var mesh := terrain.get_node("Ground") as MeshInstance3D
+	var aabb: AABB = (mesh.mesh as PlaneMesh).custom_aabb
+	_check("mesh bounds reach down to the platform", aabb.position.y <= 580.0 + 1e-3, str(aabb))
+	var mat := mesh.material_override as ShaderMaterial
+	_check("shader gets the grading", mat.get_shader_parameter("has_grading") == true and mat.get_shader_parameter("grading") is ImageTexture)
+	terrain.follow_schedule(null, 0.0)
+	_near("no schedule: finished ground", (mat.get_shader_parameter("grade_progress") as PackedFloat32Array)[0], 1.0, 1e-6)
+	var none: Array[TerrainPlatform] = []
+	terrain.platforms = none
+	terrain.rebuild()
+	_check("clearing platforms gives the natural ground", terrain.grading() == null and absf(terrain.height_at(500002.5, 4399997.5) - 600.25) < 1e-3)
 	sm.queue_free()

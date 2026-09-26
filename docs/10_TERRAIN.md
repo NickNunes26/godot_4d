@@ -170,6 +170,77 @@ The near textures (`GroundTextures`: Poly Haven `forest_leaves_02` and `dry_rive
 2k) are downloaded once per project into `res://terrain/_ground_textures/` (~15 MB). Untick
 **Texturas cercanas** to skip them; the ground is then orthophoto only.
 
+## Levelled platforms
+
+The downloaded ground is the land as it is, which suits a bridge or a road on its natural line.
+A building sits on levelled ground instead. `ConstructionTerrain.platforms` holds that levelling:
+a list of `TerrainPlatform`s, each a level area cut and filled into the terrain. When the list is
+empty, the ground stays natural. Nothing is written into `terrain.res`, so removing the platforms
+gives back the downloaded ground.
+
+**A platform** (all in the parts container's space, so it moves with the model when its
+georeference changes):
+
+| Property | Meaning |
+|---|---|
+| `footprint` | Outline in the container's X/Z plane, ≥ 3 points |
+| `level` | Height of the levelled surface, container Y |
+| `bank_slope` | Banks, horizontal per 1 vertical (1.5 earth, 0.5 a steep excavation face; 0 = no bank) |
+| `activities` | Schedule action ids that do this earthwork (see below); empty = present from day 0 |
+| `bare_earth` | Draw the levelled area and its banks as bare earth |
+| `enabled`, `name` | Switch off without deleting; label for reports |
+
+Platforms apply in order: a pit listed after a pad is dug into the pad. Inside the footprint the
+ground is set to `level`. Outside it, the ground is clamped between `level ± distance / bank_slope`,
+which cuts where it was higher and fills where it was lower. The bank ends where it meets the
+natural ground.
+
+**The grid edge.** The ground is a triangle grid of `cell` metres (5 m), so its edge cannot follow a
+footprint drawn at arbitrary angles. A triangle with one corner on the platform and another up
+the bank would tilt across the footprint's edge and poke through whatever the model has there.
+Every grid point within one cell diagonal (7.07 m at 5 m) of the footprint is therefore levelled
+too, and the banks start from there. The levelled area can come out up to that much wider than
+drawn, never narrower.
+
+**On the timeline.** A platform with `activities` changes from natural to levelled between the
+earliest start and the latest finish of those actions (`TerrainPlatform.progress_on()`).
+`TimelineController.scrub_to()` pushes the day to every terrain (`ConstructionTerrain.update_all()`,
+alongside `GeoSun`), so it works for Play, scrubbing, the dock preview and movie recording. Stop
+Preview puts the finished ground back. An id missing from the schedule counts as "no activity".
+
+**How it is drawn.** `TerrainGrading.compute()` works out each grid point's height change and keeps
+only the rectangle of points that change: 22 × 19 texels for the sample site, out of 841². Each
+point has two slots (platform + change), so a point that is first levelled and then dug keeps both
+steps with their own timing. The shader adds `change × progress` per slot in `h_at()`, so normals
+and everything else follow. Bare earth is a warm soil colour carrying the rock texture's detail
+near the camera, shown where a point is inside a footprint or moved by at least 0.3 m. Collision
+is the finished ground: rebuilding a 1025² height field every frame would cost far more than it
+is worth. `ConstructionTerrain.height_at()` and **Comprobar posición** use the levelled ground.
+
+**From the model** (dock: **Nivelar desde el modelo**, with **Talud H:V** and **Margen m**).
+`TerrainGrading.platforms_from_model()` proposes:
+
+- a **pad** over the model's plan extent plus the margin (default 0: the levelled ring above
+  already leaves an apron). Its level is the bottom elevation carrying the largest plan area of
+  parts, leaving out foundations (`IfcFooting`, `IfcPile`, ...) and the parts of excavation
+  actions. Parts resting there keep their bottom faces exactly on the ground, so no faces are
+  drawn on top of each other;
+- a **pit**, when parts reach more than 0.25 m below the pad. It covers their plan extent (plus
+  0.5 m, unless the model draws the dig itself) and goes down to the lowest of them, with banks
+  at no more than 0.5;
+- **timing** from action ids and comments: site levelling or topsoil words (`terra vexetal`,
+  `desmonte`, `explanación`, `grading`, ...) drive the pad; excavation words (`escavación`,
+  `vaciado`, `zanja`, `trench`, ...) drive the pit. Each falls back to the other's actions, so a
+  pit never appears before its pad.
+
+Parts are measured at their rest placement (`original_pos` / `original_scale`), so a running
+preview does not throw it off. The proposal replaces the current platforms; adjust it in the
+Terrain node's inspector. **Terreno natural** removes them all.
+
+For `pazo_xilloi.tscn` this gives a pad at 25.47 m (the bottom of the model's own `Z00_Terreo`
+ground, 60 × 46 m), tied to `C02_TerraVexetal`. It also gives a pit at 23.67 m, exactly the
+model's 29.2 × 19.2 m dig, tied to `C03_Escavacion`: about 10,100 m³ of cut and 2,400 m³ of fill.
+
 ## Position check
 
 `TerrainBuilder.position_check()` samples the ground under every part's footprint centre and
@@ -239,6 +310,8 @@ not freely redistributable.
 | `terrain/terrain_builder.gd` | `TerrainBuilder` | Resampling, textures, world files, position check |
 | `terrain/terrain_data.gd` | `TerrainData` | Saved site (Resource) |
 | `terrain/construction_terrain.gd` | `ConstructionTerrain` | The terrain node |
+| `terrain/terrain_platform.gd` | `TerrainPlatform` | One levelled area (Resource) |
+| `terrain/terrain_grading.gd` | `TerrainGrading` | Cut/fill, grading texture, platforms from a model |
 | `terrain/ground.gdshader` | — | Ground material |
 | `terrain/ground_textures.gd` | `GroundTextures` | Near textures from Poly Haven |
 | `runtime/geo_sun.gd` | `GeoSun` | Date-driven sun |
@@ -253,7 +326,11 @@ and `tests/test_ifc_scene_models.gd` (need GDIFC for the import part).
   16 km); today the ground ends at the edge of the square.
 - **Water**: rivers are only what the orthophoto shows; no water surface.
 - **Vegetation, haze, sky**: use Godot's own `Environment` (fog, sky) for now.
-- **Survey topography** (detailed site meshes) and **terrain edits** around the model (burying
+- **Finer ground near the model**: levelled edges follow the 5 m grid (see "Levelled platforms").
+  A locally refined grid would give crisp pad edges and near-vertical excavation faces.
+- **Landscaping over the banks**: levelled ground stays bare earth to the end of the schedule; a
+  platform option to regrass it with a late activity would suit finished-project renders.
+- **Survey topography** (detailed site meshes) and other **terrain edits** around the model (burying
   supports, road cuts).
 - **Terrain in clash checks**: parts against the ground is a plausible future check.
 - **Other countries' imagery**: providers welcome (see "Adding a country").

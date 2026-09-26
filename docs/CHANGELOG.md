@@ -5,9 +5,19 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## Unreleased
 
+**Levelled platforms** (new, see `10_TERRAIN.md` "Levelled platforms")
+- `ConstructionTerrain.platforms`: building pads, excavation pits and the like, cut and filled into
+  the downloaded ground with banks at a chosen slope. Empty keeps the natural ground (bridges).
+- Each platform can follow schedule activities: natural before, levelled after, morphing in
+  between, drawn as bare earth.
+- Dock: **Nivelar desde el modelo** proposes a pad and a pit from the model's geometry and the
+  schedule's earthwork actions; **Terreno natural** clears them.
+- `pazo_xilloi.tscn` now has its pad and pit, tied to C02 and C03.
+- `TerrainBuilder.position_check()` takes an optional ground function; **Comprobar posición**
+  checks against the levelled ground.
+
 **`drop_in` no longer bounces** (`core/animation_applier.gd`). `TRANS_BOUNCE` became
 `TRANS_CUBIC` + `EASE_OUT`, in both live play and scrubbing: the part falls and settles once.
-
 
 **Memory leak at startup fixed.** `ConstructionSchedule.get_part_states()` cached every day it was
 ever asked for, and the automatic first-frame `scan_collisions()` asks for about 33,000 days (every
@@ -16,7 +26,6 @@ than 7 GB. Now only the last day is kept, which is all scrub-then-query needs. S
 `scan_collisions()` returns at once when no part uses `install`: `CollisionQuery` only ever checks
 `install` movers, so nothing could be found, and the scan used to walk every part through the
 whole schedule for over a minute before the first frame. Memory now stays flat at about 450 MB.
-
 
 **Project XML import — two fixes** (`editor/schedule_project_xml_io.gd`,
 `apply_task_onto_action()`). Both found by round-tripping a real 46-activity plan

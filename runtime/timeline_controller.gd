@@ -86,6 +86,10 @@ func scrub_to(target_day: float, retract_crane: bool = true) -> void:
 	# the same day, so calling this every Play frame costs nothing).
 	if _schedule.has_calendar_dates() and is_inside_tree():
 		GeoSun.update_all(get_tree(), _schedule.day_to_epoch(current_day))
+	# Terrain platforms follow their earthwork activities (natural ground before,
+	# levelled after).
+	if is_inside_tree():
+		ConstructionTerrain.update_all(get_tree(), _schedule, current_day)
 
 	if retract_crane:
 		for crane in _cranes.values():

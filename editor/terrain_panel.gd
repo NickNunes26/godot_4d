@@ -26,6 +26,8 @@ var _rot_edit: LineEdit
 var _preset: OptionButton
 var _auto_check: CheckBox
 var _near_check: CheckBox
+var _slope_spin: SpinBox
+var _margin_spin: SpinBox
 var _download_button: Button
 var _status: Label
 var _attribution: Label
@@ -119,6 +121,19 @@ func _build_ui() -> void:
 	_button(actions, "Añadir sol", "Adds a GeoSun: a directional light placed where the sun is over the site on the timeline's date at 11:00 local time.", _on_add_sun)
 	_button(actions, "Cancelar", "Stops the download in progress after the current request.", func(): _service.cancelled = true)
 
+	var grading := HFlowContainer.new()
+	_body.add_child(grading)
+	_label(grading, "Talud H:V")
+	_slope_spin = _spin(grading, 0.0, 10.0, 0.1, _meta("slope", 1.5),
+		"Bank slope of the platform: metres of horizontal run per metre of height (1.5 is a usual earth slope). The excavation pit uses at most 0.5.")
+	_slope_spin.value_changed.connect(func(v): _set_meta("slope", v))
+	_label(grading, "Margen m")
+	_margin_spin = _spin(grading, 0.0, 100.0, 0.5, _meta("margin", 0.0),
+		"Extra room around the model's plan extent for the levelled pad, metres. The terrain grid already levels up to one cell diagonal (7 m at 5 m cells) beyond it, so 0 usually leaves a working apron.")
+	_margin_spin.value_changed.connect(func(v): _set_meta("margin", v))
+	_button(grading, "Nivelar desde el modelo", "Levels the ground for a building: a pad at the level the model stands on, over its plan extent plus the margin, and a pit down to the footings. Both follow the schedule's earthwork activities (site levelling / topsoil, excavation) when it has any. Replaces the terrain's current platforms; edit them afterwards in the Terrain node's inspector (Platforms).", _on_level_from_model)
+	_button(grading, "Terreno natural", "Removes every platform: the ground as downloaded, e.g. for a bridge.", _on_natural_ground)
+
 	_status = Label.new()
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_body.add_child(_status)
@@ -147,6 +162,16 @@ func _field(parent: Control, label: String, placeholder: String, tip: String) ->
 	e.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	parent.add_child(e)
 	return e
+
+func _spin(parent: Control, lo: float, hi: float, step: float, value: float, tip: String) -> SpinBox:
+	var sb := SpinBox.new()
+	sb.min_value = lo
+	sb.max_value = hi
+	sb.step = step
+	sb.value = value
+	sb.tooltip_text = tip
+	parent.add_child(sb)
+	return sb
 
 func _button(parent: Control, text: String, tip: String, cb: Callable) -> Button:
 	var b := Button.new()
@@ -395,7 +420,7 @@ func _on_check() -> void:
 	if not terrain or not terrain.data or not geo:
 		_set_status("No hay terreno en la escena.")
 		return
-	_set_status(TerrainBuilder.position_check(terrain.data, _samples(sm, geo)).text)
+	_set_status(TerrainBuilder.position_check(terrain.data, _samples(sm, geo), terrain.height_at).text)
 
 func _on_sit() -> void:
 	var sm := _sequence_manager()
@@ -411,6 +436,65 @@ func _on_sit() -> void:
 	EditorInterface.mark_scene_as_unsaved()
 	_set_status("Origen %+.2f m: ahora a %.2f m. %s" % [lift, geo.height, TerrainBuilder.position_check(terrain.data, _samples(sm, geo)).text])
 	refresh()
+
+func _on_level_from_model() -> void:
+	var sm := _sequence_manager()
+	var terrain := _terrain_node(sm)
+	var container := _container(sm)
+	if not terrain or not terrain.data:
+		_set_status("Primero hace falta el terreno (Descargar terreno).")
+		return
+	if not container:
+		_set_status("No hay modelo en la escena.")
+		return
+	var list := TerrainGrading.platforms_from_model(container, _schedule_actions(sm), _margin_spin.value, _slope_spin.value)
+	if list.is_empty():
+		_set_status("El modelo no tiene piezas con geometría.")
+		return
+	terrain.platforms = list
+	terrain.rebuild()
+	EditorInterface.mark_scene_as_unsaved()
+	var geo := _geo(sm)
+	var lines: Array = []
+	for p in list:
+		var ext := Rect2(p.footprint[0], Vector2.ZERO)
+		for q in p.footprint:
+			ext = ext.expand(q)
+		var when := ", con %s" % ", ".join(p.activities) if not p.activities.is_empty() else ", desde el día 0"
+		var abs_level := " (%.2f m)" % geo.local_to_map(Vector3(0.0, p.level, 0.0))[2] if geo and geo.height_known else ""
+		lines.append("%s %.0f x %.0f m a cota %.2f%s%s" % [p.name, ext.size.x, ext.size.y, p.level, abs_level, when])
+	var g := terrain.grading()
+	var volumes := " Desmonte %.0f m³, terraplén %.0f m³." % [g.cut_m3, g.fill_m3] if g else ""
+	_set_status("Nivelado: " + "; ".join(lines) + "." + volumes + " Ajusta las plataformas en el inspector del nodo Terrain.")
+
+func _on_natural_ground() -> void:
+	var terrain := _terrain_node(_sequence_manager())
+	if not terrain:
+		_set_status("No hay terreno en la escena.")
+		return
+	if terrain.platforms.is_empty():
+		_set_status("El terreno ya es el natural.")
+		return
+	terrain.platforms = []
+	terrain.rebuild()
+	EditorInterface.mark_scene_as_unsaved()
+	_set_status("Plataformas quitadas: terreno natural.")
+
+## [{id, prefix, text}] for every action in the scene's construction JSON.
+func _schedule_actions(sm: Node) -> Array:
+	var out: Array = []
+	var path: String = sm.get("construction_json_path") if sm else ""
+	if path == "" or not FileAccess.file_exists(path):
+		return out
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not (parsed is Dictionary):
+		return out
+	for step in parsed.get("steps", []):
+		for a in step.get("actions", []):
+			var id := ConstructionSchedule._action_id(a)
+			if id != "":
+				out.append({"id": id, "prefix": a.get("target_prefix", ""), "text": "%s %s %s" % [id, a.get("name", ""), a.get("comment", "")]})
+	return out
 
 func _on_remove() -> void:
 	var terrain := _terrain_node(_sequence_manager())

@@ -186,12 +186,14 @@ static func _local_aabb(node: Node3D, container: Node3D) -> AABB:
 ## String, "lift": float} where `lift` is how far the model would have to rise
 ## (negative: sink) for its most ground-penetrating part to just touch the
 ## ground -- what "sit on the ground" applies to a model with no known height.
-static func position_check(data: TerrainData, samples: Array) -> Dictionary:
+## `ground` (optional, (e, n) -> height) replaces the natural ground, e.g. with
+## ConstructionTerrain.height_at to check against the levelled platforms.
+static func position_check(data: TerrainData, samples: Array, ground := Callable()) -> Dictionary:
 	var rows: Array = []
 	for s in samples:
 		if not data.contains(s.e, s.n):
 			continue
-		var g := data.height_at(s.e, s.n)
+		var g: float = ground.call(s.e, s.n) if ground.is_valid() else data.height_at(s.e, s.n)
 		rows.append({"bottom": s.bottom - g, "top": s.top - g})
 	if rows.is_empty():
 		return {"ok": false, "text": "El modelo queda fuera del terreno descargado.", "lift": 0.0, "count": 0}
