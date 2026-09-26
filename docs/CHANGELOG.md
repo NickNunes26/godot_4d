@@ -5,6 +5,10 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## Unreleased
 
+**`drop_in` no longer bounces** (`core/animation_applier.gd`). `TRANS_BOUNCE` became
+`TRANS_CUBIC` + `EASE_OUT`, in both live play and scrubbing: the part falls and settles once.
+
+
 **Memory leak at startup fixed.** `ConstructionSchedule.get_part_states()` cached every day it was
 ever asked for, and the automatic first-frame `scan_collisions()` asks for about 33,000 days (every
 0.01 day of the schedule) × one entry per part. The Pazo Xilloi scene grew by about 90 MB/s to more

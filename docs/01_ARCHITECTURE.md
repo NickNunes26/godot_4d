@@ -154,7 +154,7 @@ where `progress ∈ [0, 1]` represents how far through the animation we are.
 
 ##### `drop_in`
 - **Start**: `part.visible = false`, `part.position = original_pos + Vector3(0, 15, 0)` (high up)
-- **Mid** (0–1): interpolate `part.position.y` from `original_pos.y + 15` to `original_pos.y` with `TRANS_BOUNCE`
+- **Mid** (0–1): interpolate `part.position.y` from `original_pos.y + 15` to `original_pos.y` with `TRANS_CUBIC` + `EASE_OUT` (settles without rebounding)
 - **End**: `part.visible = true`, `part.position = original_pos`
 
 ##### `rise_up`

@@ -80,7 +80,7 @@ static func _drop_in(pt: Tween, part: Node3D, dur: float):
 	part.scale = part.get_meta("original_scale")
 	part.position = orig_pos + Vector3(0, 15, 0)
 	pt.tween_property(part, "position", orig_pos, dur)\
-	  .set_trans(Tween.TRANS_BOUNCE)
+	  .set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 static func _rise_up(pt: Tween, part: Node3D, dur: float):
 	var orig_pos = part.get_meta("original_pos")
@@ -476,7 +476,7 @@ static func _drop_in_instant(part: Node3D, progress: float) -> void:
 	if progress >= 1.0:
 		part.position = orig_pos
 		return
-	var y = Tween.interpolate_value(start_y, orig_pos.y - start_y, progress, 1.0, Tween.TRANS_BOUNCE, Tween.EASE_OUT)
+	var y = Tween.interpolate_value(start_y, orig_pos.y - start_y, progress, 1.0, Tween.TRANS_CUBIC, Tween.EASE_OUT)
 	part.position = Vector3(orig_pos.x, y, orig_pos.z)
 
 static func _rise_up_instant(part: Node3D, progress: float) -> void:
