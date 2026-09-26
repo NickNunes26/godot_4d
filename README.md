@@ -38,6 +38,11 @@ Open `addons/construction_4d_tool/examples/demo.tscn` and see
    **Construction Json Path** to it. The default is `res://construction_steps.json`.
 4. Press Play, or use the dock's **Start Preview** to scrub in the editor.
 
+A scene with no `Camera3D`, no environment or no `DirectionalLight3D` of its own still shows the
+model when you press Play. For that run only, `SequenceManager` adds whatever is missing: a
+free-fly camera framed on the whole model, a procedural sky and a sun. It prints a line saying so
+and saves nothing into the scene. Add your own nodes to replace them.
+
 ## Terrain
 
 After **Load IFC (4D)** the model keeps its position on Earth (`SequenceManager.geo_origin`), and

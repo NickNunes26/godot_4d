@@ -294,6 +294,24 @@ not attempted in this pass.
 independent of everything else here (doesn't touch `TimelineController`, parts, or
 collisions) and would work in any scene with a `Camera3D`.
 
+**No camera in the scene.** A scene built from the documented steps (a `SequenceManager` and an
+imported model) has no `Camera3D`, and used to run as an empty grey screen under a working
+timeline. `SequenceManager._ensure_view()` now runs at the start of `_ready()` at runtime, before
+any part is hidden or moved. It adds, as children of the `SequenceManager`, only what the scene
+lacks:
+
+- a `Camera3D` with this script, framed on the whole model (the world box of every part from
+  `collect_part_nodes()`, looked at from the south-east and above, at 1.9× its radius), with
+  `far` at 3000 m or more and `move_speed` scaled to the model;
+- a `WorldEnvironment` with a procedural sky, when the world has no environment and the project
+  sets no default one;
+- a `DirectionalLight3D` with shadows, when the tree has no directional light (a `GeoSun`
+  counts).
+
+It prints `SequenceManager: the scene has no ... of its own -- added a default one for this run.`
+Nothing is saved into the scene, the editor preview is untouched, and a scene that has any of
+these keeps its own. Movie mode's `CameraDriver` drives the added camera like any other.
+
 **In movie mode it is switched off** and `CameraDriver` takes the same node over — see
 "Camera keyframes" below. Interactive sessions, which is everything else, behave exactly
 as described here.

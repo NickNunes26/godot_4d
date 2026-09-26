@@ -98,6 +98,8 @@ func _ready():
 	if Engine.is_editor_hint():
 		return
 	movie_mode = movie_mode_override or Engine.get_write_movie_path() != ""
+	# Before anything hides or moves the parts: the camera is framed on them.
+	_ensure_view()
 	load_json()
 	_generate_formwork()
 	initialize_parts()
@@ -222,6 +224,71 @@ func _disable_free_look() -> void:
 		camera.set_process_unhandled_input(false)
 	if not cameras.is_empty():
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+## Fills in what a scene needs to show anything at all, for this run only. A
+## scene built the documented way -- a SequenceManager plus an imported model --
+## has no camera, no environment and no light, and runs as an empty grey
+## screen with a working timeline over it. Each is added only when the scene
+## has none of its own, so an authored camera, WorldEnvironment or sun always
+## wins; nothing is saved into the scene.
+func _ensure_view() -> void:
+	var added: Array = []
+	var world := get_viewport().find_world_3d()
+	if world and world.environment == null and world.fallback_environment == null:
+		var env_node := WorldEnvironment.new()
+		env_node.name = "DefaultEnvironment"
+		env_node.environment = _default_environment()
+		add_child(env_node)
+		added.append("sky")
+	if get_tree().root.find_children("*", "DirectionalLight3D", true, false).is_empty():
+		var sun := DirectionalLight3D.new()
+		sun.name = "DefaultSun"
+		sun.shadow_enabled = true
+		add_child(sun)
+		sun.global_rotation_degrees = Vector3(-50.0, 30.0, 0.0)
+		added.append("sun")
+	if get_viewport().get_camera_3d() == null:
+		# Framed on the whole model from the south-east and above, far enough
+		# back to see all of it; WASD/mouse from there (FreeLookCamera).
+		var box := _model_box()
+		var radius := maxf(box.size.length() * 0.5, 5.0)
+		var cam := Camera3D.new()
+		cam.name = "DefaultCamera"
+		cam.set_script(_FREE_LOOK_SCRIPT)
+		cam.far = maxf(3000.0, radius * 20.0)
+		add_child(cam)
+		cam.global_position = box.get_center() + Vector3(0.45, 0.5, 0.75).normalized() * radius * 1.9
+		cam.look_at(box.get_center(), Vector3.UP)
+		cam.set("move_speed", maxf(radius * 0.2, 8.0))
+		cam.make_current()
+		added.append("free-fly camera")
+	if not added.is_empty():
+		print("SequenceManager: the scene has no %s of its own -- added a default one for this run." % ", ".join(added))
+
+## World-space box around every part, at rest.
+func _model_box() -> AABB:
+	var box := AABB()
+	var first := true
+	for part in collect_part_nodes():
+		var meshes: Array = [part] if part is MeshInstance3D else []
+		meshes.append_array(part.find_children("*", "MeshInstance3D", true, false))
+		for m in meshes:
+			if not m.mesh:
+				continue
+			var b: AABB = m.global_transform * m.mesh.get_aabb()
+			box = b if first else box.merge(b)
+			first = false
+	return box if not first else AABB(global_position - Vector3.ONE * 10.0, Vector3.ONE * 20.0)
+
+static func _default_environment() -> Environment:
+	var sky := Sky.new()
+	sky.sky_material = ProceduralSkyMaterial.new()
+	var env := Environment.new()
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	return env
 
 func _find_free_look_cameras(node: Node, out: Array) -> void:
 	if node.get_script() == _FREE_LOOK_SCRIPT:

@@ -5,6 +5,13 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## Unreleased
 
+**Play no longer shows a grey screen in a scene without a camera**
+(`runtime/sequence_manager.gd`, `_ensure_view()`). The documented steps never add a
+`Camera3D`, environment or light, so a scene built by following them ran as an empty grey
+viewport under a working timeline. At runtime `SequenceManager` now adds, for that run only, a
+free-fly camera framed on the model, a procedural sky and a sun. Each is added only when the
+scene has none of its own, and nothing is saved. See `docs/README.md`, "Camera".
+
 **Dated-less parts with an id are shown again** (`ifc/ifc_schedule_generator.gd`). A part with
 an Element ID but no usable date became a `static_prefixes` entry named after its *zone*
 (`IfcSite_22_`). The adapter had named the part after its *id* (`Z00_Terreo`), so the prefix
