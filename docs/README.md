@@ -449,10 +449,15 @@ restores wherever the timeline was before returning, so it's a one-shot, self-co
 operation. The **"Scan Collisions" button** in `TimelineUI` runs it, prints a report to
 the console (e.g. `Day 3.10–3.40: Beam_02 ↔ Col_01`), and feeds the
 windows into `CollisionOverlay` (`collision_overlay.gd`), which paints red zones
-directly on the slider. `sample_step` defaults to `0.01` to match
-`get_part_states()`'s internal cache granularity — coarser steps risk stepping over
-a short in-transit window entirely when many parts are staggered within one bucketed
-day. **`TimelineUI` also runs one scan automatically** on its first `_process()` frame
+directly on the slider. `sample_step` defaults to `0.01`, the granularity
+`get_part_states()` keys its one-day cache on; coarser steps risk stepping over a
+short in-transit window entirely when many parts are staggered within one bucketed
+day. **A schedule with no `install` part returns `[]` at once** without stepping at all
+(`ConstructionSchedule.has_install_parts()`): `CollisionQuery` only ever checks
+`install` movers, so nothing could be found, and the walk took over a minute on a
+real model. `get_part_states()` keeps only the last day it computed. It used to keep
+every day it was ever asked for, and this scan asks for all of them: about 33,000 ×
+one entry per part, several GB. **`TimelineUI` also runs one scan automatically** on its first `_process()` frame
 after being wired up (`_auto_scanned`, deferred one frame past `_ready()` since the
 physics space `get_collisions()` depends on needs at least one frame to be
 queryable) — so the overlay is already populated the moment the scene starts, not

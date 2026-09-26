@@ -5,6 +5,16 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## Unreleased
 
+**Documentation brought up to date with everything below.** `04_API_REFERENCE.md` covers
+`has_install_parts()`, the one-day `get_part_states()` cache, the scan's early return,
+`scrub_to()`'s sun and terrain steps, `_ensure_view()`, `repair_text()`,
+`position_check(..., ground)`, `ConstructionTerrain.platforms`, `TerrainPlatform` and
+`TerrainGrading`. `01_ARCHITECTURE.md`'s caching section and `docs/README.md`'s collision scan
+describe the code as it is now. The README's feature list and limitations are current. The IFC +
+MS Project workflow was re-run from GitHub `main` (`a87c025`) in a fresh project with nothing
+but the `.ifc` and `.xml`. It passed with no intervention: all five test suites, 46/46 dates
+matching the hand-made schedule, no garbled text, and memory flat at ~430 MB during Play.
+
 **Accented IFC text is repaired on import** (`ifc/gdifc_4d_adapter.gd`,
 `repair_text()` / `repair_string()`, called from the dock right after GDIFC reads the file).
 GDIFC 1.1.0-alpha reads IFC text as UTF-8 bytes taken for Latin-1, so every accented label

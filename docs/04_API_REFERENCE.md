@@ -24,8 +24,9 @@ Quick reference for all public APIs in the 4D Construction Tool. For implementat
 - [CameraTrack](#cameratrack) *(feature 5, new)*
 - [CameraDriver](#cameradriver) *(feature 5, new)*
 - [Editor-side classes](#editor-side-classes) *(Phase 3)*
+- [IFC classes](#ifc-classes-ifc)
 - [Georeference classes](#georeference-classes-geo) *(0.5.0)*
-- [Terrain classes](#terrain-classes-terrain) *(0.5.0)*
+- [Terrain classes](#terrain-classes-terrain) *(0.5.0; levelled platforms after 0.5.0)*
 - [Data Types](#data-types)
 
 ---
@@ -168,10 +169,10 @@ Query the state of all scheduled parts at a specific day number. **This is the c
   - 0.0 < progress < 1.0 = mid-animation
 
 **Behavior**:
-- Internally caches results, keyed by `int(round(current_day * 100.0))` — an **integer** key, not a rounded float (GDScript compares float keys by exact bits, so precision drift would silently defeat the cache)
+- Caches **the last day only**, keyed by `int(round(current_day * 100.0))` — an **integer** key, not a rounded float (GDScript compares float keys by exact bits, so precision drift would silently defeat the cache). Asking again for the same 0.01-day key returns the same Dictionary; a new key replaces it
 - Returns an entry for every part in `_part_schedules`; empty only if nothing is scheduled at all
 - Does **not** clamp `current_day`, and never errors on an out-of-range value — `progress` simply saturates at `0.0` before a part's start day and `1.0` after its end day. Clamping to the date range happens one level up, in `TimelineController.scrub_to()`
-- The cache is **unbounded**: it holds one entry per distinct 0.01-day key ever queried, and is only discarded when the `ConstructionSchedule` itself is freed (a fresh one is built by Recalculate / Reload from JSON / Start Preview). `01_ARCHITECTURE.md` recommended an LRU or hard cap; that was not implemented
+- Memory is constant. The cache used to keep every key ever queried, and a full `scan_collisions()` queries every 0.01 day, which grew a real project by several GB (see `01_ARCHITECTURE.md`, "`get_part_states()` Caching")
 
 **Example**:
 ```gdscript
@@ -232,6 +233,15 @@ One entry per commander unit whose action type is `install`:
  tracked_part_name: String, lift_dur: float, slide_dur: float, crane_id: String}
 ```
 Consumed by `TimelineController._detect_install_actions()` to fire one `Crane.swing()` per unit as forward playback crosses its `start_day` (never during scrub). `crane_id` is `""` when `cranes` was empty at schedule-build time; such units are silently skipped.
+
+**Throws**: Never
+
+---
+
+#### `has_install_parts() -> bool`
+
+**Description**:
+Whether any scheduled part animates with `install`, the only kind `CollisionQuery` checks as a mover. `false` means no collision can exist on any day; `TimelineController.scan_collisions()` uses it to skip the scan.
 
 **Throws**: Never
 
@@ -425,7 +435,9 @@ Jump to a specific day and apply all parts' states at that moment. **Used for bo
 3. Clamps `target_day` to `[min_day, max_day]` and stores it in `current_day`
 4. Calls `schedule.get_part_states(current_day)`
 5. For each part in the result that exists in `_building_parts`, calls `AnimationApplier.apply_instant(part, anim_type, progress)`
-6. If `retract_crane`, calls `retract()` on **every** crane in `_cranes`
+6. If the schedule has calendar dates, `GeoSun.update_all()` points every `GeoSun` at that date
+7. `ConstructionTerrain.update_all()` blends every terrain's levelled platforms to their progress on that day
+8. If `retract_crane`, calls `retract()` on **every** crane in `_cranes`
 
 **Side effects**:
 - All parts instantly assume their state at `target_day`
@@ -563,7 +575,7 @@ var collisions = controller.get_collisions()
 Steps through the *entire* date range (not just the current day), collecting every collision and merging consecutive hits on the same part-pair into windows. Teleports every part through the full range via `apply_instant()` (no tweens, no crane movement) and restores wherever the timeline was before returning — a one-shot, self-contained operation.
 
 **Parameters**:
-- `sample_step: float` — day-granularity to step at; defaults to `0.01` to match `get_part_states()`'s internal cache granularity (coarser steps risk stepping over a short in-transit window)
+- `sample_step: float` — day-granularity to step at; defaults to `0.01`, the key granularity of `get_part_states()` (coarser steps risk stepping over a short in-transit window)
 
 **Returns**: Array of merged collision windows:
 ```gdscript
@@ -574,7 +586,8 @@ Steps through the *entire* date range (not just the current day), collecting eve
 ```
 
 **Behavior**:
-- Called by the "Scan Collisions" button in `TimelineUI`, which also prints a console report (e.g. `Day 3.10–3.40: Beam_02 ↔ Col_01`) and feeds the windows into `CollisionOverlay`
+- Returns `[]` immediately, without stepping, when `ConstructionSchedule.has_install_parts()` is false: only `install` parts are ever checked as movers, and walking every part through a real schedule takes over a minute
+- Called by the "Scan Collisions" button in `TimelineUI` (and once automatically on its first frame), which also prints a console report (e.g. `Day 3.10–3.40: Beam_02 ↔ Col_01`) and feeds the windows into `CollisionOverlay`
 - The overlay does not auto-refresh — re-run after editing `construction_steps.json`
 
 **Example**:
@@ -806,6 +819,8 @@ Duplicate the materials a part draws with, so animating one part doesn't affect 
 func _ready():
   if Engine.is_editor_hint():
     return                       # editor: the dock drives setup explicitly instead
+  movie_mode = movie_mode_override or Engine.get_write_movie_path() != ""
+  _ensure_view()                 # default camera / sky / sun, only where the scene has none
   load_json()
   _generate_formwork()
   initialize_parts()
@@ -831,6 +846,25 @@ func _ready():
 ```
 
 ---
+
+#### `_ensure_view() -> void`
+
+Runs first in `_ready()` at runtime, before any part is hidden or moved. A scene built from the
+documented steps (a `SequenceManager` plus an imported model) has no camera, environment or light,
+and would run as an empty grey screen under a working timeline. For this run only, it adds as
+children of the `SequenceManager`:
+
+- `DefaultCamera`: a `Camera3D` with `free_look_camera.gd`, framed on `_model_box()` (the world box
+  of every part from `collect_part_nodes()`). It is placed south-east and above at 1.9× the box's
+  radius, with `far` ≥ 3000 m and `move_speed` scaled to the model. Only when
+  `get_viewport().get_camera_3d()` is null.
+- `DefaultEnvironment`: a `WorldEnvironment` with a procedural sky, filmic tonemapping and sky
+  ambient light. Only when the world has neither an environment nor a project default one.
+- `DefaultSun`: a `DirectionalLight3D` with shadows. Only when the tree has no directional light
+  (a `GeoSun` counts).
+
+It prints `SequenceManager: the scene has no <list> of its own -- added a default one for this run.`
+Nothing is saved into the scene.
 
 #### `_resolve_cranes() -> Dictionary`
 
@@ -882,7 +916,7 @@ Resolves every crane this scene should drive, keyed by node name — the same na
 ## FreeLookCamera
 
 **File**: `free_look_camera.gd`
-**Type**: attached directly to the scene's existing `Camera3D` node
+**Type**: attached directly to the scene's existing `Camera3D` node, or to the `DefaultCamera` that `SequenceManager._ensure_view()` adds when the scene has none
 **Purpose**: Free-fly spectator camera for debugging/inspection *(outside the phased roadmap entirely — a convenience addition, not planned in `00_4D_TOOL_OVERVIEW.md` or any milestone)*
 
 **Behavior**:
@@ -1034,6 +1068,15 @@ The user's choice of which IFC properties mean what. A property path is an `Arra
   moved into node transforms. A name in `taken_names` (other models' parts,
   `IfcSceneModels.taken_part_names()`) gets a `_2`, `_3`… suffix, with a warning.
 - `static get_property_sets(leaf: MeshInstance3D) -> Dictionary`
+- `static repair_text(root: Node) -> int` — repairs, in place, the `properties` and `attributes`
+  of every part under `root` that GDIFC mis-decoded (UTF-8 read as Latin-1: `FormigÃ³n` →
+  `Formigón`); returns how many parts changed. The dock calls it right after GDIFC reads a file,
+  before the mapping dialog scans the properties.
+- `static repair_value(value: Variant) -> Variant` — the same for any String / Dictionary (keys
+  and values) / Array.
+- `static repair_string(s: String) -> String` — decodes again only a string made entirely of
+  U+0000..U+00FF whose bytes are valid UTF-8 with a multi-byte sequence; returns anything else
+  unchanged.
 
 ### `IFCScheduleGenerator` (`RefCounted`)
 - `static generate(parts: Variant, mapping: IfcMapping, existing: Dictionary = {}) -> Dictionary` — `parts`
@@ -1154,7 +1197,9 @@ See `10_TERRAIN.md`. All coordinates are 64-bit `float`; nothing at map magnitud
 - `world_file_rect(image_path, w, h) -> PackedFloat64Array`, `write_world_file(image_path, rect, px)`
 - `model_samples(container, geo, to_anchor := Transform3D()) -> [{e, n, bottom, top}]` — `to_anchor`
   takes an extra container's space into the primary's
-- `position_check(data, samples) -> {ok, text, lift, count}`
+- `position_check(data, samples, ground := Callable()) -> {ok, text, lift, count}` — `ground`
+  `(e, n) -> float` replaces the natural ground, e.g. `ConstructionTerrain.height_at` to check
+  against the levelled platforms
 
 ### `AscGrid` (`RefCounted`)
 - `static parse(text, error := {}) -> AscGrid` (null if not a grid; tolerates multipart MIME)
@@ -1169,8 +1214,34 @@ See `10_TERRAIN.md`. All coordinates are 64-bit `float`; nothing at map magnitud
 
 ### `ConstructionTerrain` (`Node3D`, `@tool`)
 - Exported: `data: TerrainData`, `geo_origin: GeoOrigin`, `anchor_path` (the parts container),
-  `use_near_textures`, `grade_orthophoto`, `collision_enabled`, `ground_textures_dir`.
-- `rebuild()`, `update_placement()`, `height_at(e, n)`.
+  `use_near_textures`, `grade_orthophoto`, `collision_enabled`, `ground_textures_dir`,
+  `platforms: Array[TerrainPlatform]` (empty = natural ground; editing one rebuilds, deferred).
+- `GROUP := "construction_terrain"` (joined in `_enter_tree()`).
+- `rebuild()`, `update_placement()`, `grading() -> TerrainGrading` (null with no platforms).
+- `height_at(e, n)` — the levelled ground (every platform complete) when there are platforms.
+- `follow_schedule(schedule, day)` — sets each platform's progress (shader only, no rebuild);
+  `show_finished()` — every platform complete.
+- `static update_all(tree, schedule, day)` (called by `TimelineController.scrub_to()`),
+  `static reset_all(tree)` (called by the dock's Stop Preview).
+
+### `TerrainPlatform` (`Resource`, `@tool`)
+- `name`, `enabled`, `footprint: PackedVector2Array` (parts-container X/Z), `level` (container Y),
+  `bank_slope` (horizontal per 1 vertical; 0 = no bank), `activities: PackedStringArray` (action
+  ids), `bare_earth`. Every setter emits `changed`.
+- `progress_on(schedule, day) -> float` — 0 before the earliest start among `activities`, 1 after
+  the latest finish, linear between; 1 with no activities or none found.
+
+### `TerrainGrading` (`RefCounted`, `@tool`)
+- `static compute(data, platforms, to_terrain: Transform3D) -> TerrainGrading` — null when nothing
+  changes. `to_terrain` takes parts-container space into the terrain node's.
+- `MAX_PLATFORMS := 16`; fields `used: Array[TerrainPlatform]` (slot order), `rect: Rect2i` (grid
+  cells kept), `image` (RGBAF: slot-0 change, slot-0 code, slot-1 change, slot-1 code),
+  `min_height`, `max_height`, `cut_m3`, `fill_m3`.
+- `change_at(c, r)`, `height_at(e, n)`, `patched_collision() -> PackedFloat32Array`,
+  `bare_flags() -> PackedFloat32Array`.
+- `static platforms_from_model(container, actions: Array, margin := 0.0, slope := 1.5) ->
+  Array[TerrainPlatform]` — pad + pit proposal; `actions` is `[{id, prefix, text}]`. See
+  `10_TERRAIN.md`, "Levelled platforms".
 
 ### `GroundTextures` (`RefCounted`, static)
 - `DEFAULT_DIR`, `SETS`, `MAPS`, `CREDIT`; `present(dir)`, `load_all(dir) -> Dictionary`,
@@ -1178,6 +1249,8 @@ See `10_TERRAIN.md`. All coordinates are 64-bit `float`; nothing at map magnitud
 
 ### `TerrainPanel` (`VBoxContainer`, editor)
 - The dock's Terreno section. `refresh()`, `on_ifc_imported()` (called by the dock after an import).
+  Levelling row: **Talud H:V**, **Margen m**, **Nivelar desde el modelo**
+  (`TerrainGrading.platforms_from_model()` on the scene's model and schedule), **Terreno natural**.
 
 ---
 

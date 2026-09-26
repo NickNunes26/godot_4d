@@ -12,7 +12,8 @@ state on that day, or press Play to watch it get built.
   `fade_in`, `fade_out`, `install` (crane).
 - **Terrain**: downloads the real ground around a georeferenced model (elevation + orthophotos;
   Spain at 5 m / 25 cm, elevation-only worldwide), drapes it under the model, and lights the scene
-  with the sun of the schedule's date.
+  with the sun of the schedule's date. Building pads and excavation pits can be levelled into it,
+  following the earthwork activities on the timeline; with none the ground stays natural (bridges).
 - **Also**: formwork generation, collision scan, multi-crane, camera keyframes, movie mode,
   and an optional IFC pipeline (needs the separate GDIFC addon).
 
@@ -146,7 +147,7 @@ godot --headless --path . --script res://addons/construction_4d_tool/tests/test_
 
 None of them use the network.
 
-## Known limitations (0.5.0)
+## Known limitations
 
 - The dock's labels are in Spanish (tooltips carry the underlying English field names).
 - Animation offsets (drop height, rise depth, crane hover/pickup) are absolute metres, tuned for
@@ -159,7 +160,13 @@ None of them use the network.
 - Parts of an action are spread along one continuous curve over its whole window rather than
   bucketed per day (`docs/README.md`, "Known limitations").
 - Terrain: orthophotos only for mainland Spain and the Balearics (elsewhere elevation only); the
-  ground ends at the edge of the downloaded square; no water surfaces.
+  ground ends at the edge of the downloaded square; no water surfaces. Levelled platforms follow
+  the 5 m grid, so they come out up to one cell diagonal (7 m) wider than drawn, and their
+  collision is the finished ground whatever the date.
+- The collision scan only looks for clashes of `install` parts (crane lifts). A schedule without
+  any skips it.
+- Godot 4.7.2 prints `ERROR: Condition "p_I->data != this" is true` when a scene is saved. It comes
+  from the engine: it appears with this addon and GDIFC both disabled, and is harmless.
 - `docs/` still carries some historical prose from the original build order.
 
 ## Licence

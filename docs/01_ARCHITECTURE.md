@@ -520,10 +520,10 @@ All require only *additions*, not modifications to existing Phase 1 architecture
 ## Performance Considerations
 
 ### `get_part_states()` Caching
-- Internal cache keyed by the day number quantized to an **integer** key: `int(round(current_day * 100.0))`. Do NOT key the dictionary by a rounded float — GDScript compares float keys by exact bits, so precision drift (`1.01` stored as `1.0100000381...`) silently defeats the cache
-- Cache invalidates only if JSON is reloaded
-- Expected: O(num_actions + num_parts) on first call per day, O(1) on cache hit
-- **Honest expectation**: during continuous Play, `current_day` yields a new key nearly every frame, so the cache is mostly missed — acceptable because the uncached query is cheap. The cache pays off for repeated same-day queries (paused UI, Phase 2 collision scans). Bound the cache (LRU or hard cap) so long scrub sessions don't accumulate tens of thousands of entries.
+- Keyed by the day number quantized to an **integer** key: `int(round(current_day * 100.0))`. Do NOT key by a rounded float — GDScript compares float keys by exact bits, so precision drift (`1.01` stored as `1.0100000381...`) silently defeats the cache
+- **As built: one entry, the last day computed.** That covers the case the cache exists for, `scrub_to(day)` followed by `get_collisions(day)` in the same frame (and a paused timeline asking every frame). During Play nearly every frame is a new key anyway
+- Expected: O(num_parts) on a new day, O(1) on a repeat
+- **Why not more.** The cache was first unbounded (the cap recommended here was never built). The first-frame collision scan asks for every 0.01 day of the schedule, so a 330-day, 1,260-part project grew by ~90 MB/s to over 7 GB. A single entry makes memory constant; the scan itself is also skipped when no part uses `install` (see `README.md`, "Collision detection")
 
 ### Material Duplication
 - Done in `initialize_parts()` (built in Milestone -1)

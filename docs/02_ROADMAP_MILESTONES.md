@@ -233,7 +233,7 @@ A working Godot 4 project with sequential, tween-based construction playback —
        start_y,
        orig_pos.y - start_y,   # delta = final - initial = -15.0
        progress, 1.0,
-       Tween.TRANS_BOUNCE, Tween.EASE_OUT
+       Tween.TRANS_CUBIC, Tween.EASE_OUT   # shipped as TRANS_BOUNCE; the bounce was removed later
      )
      ```
    - Repeat for all 8 types, following the spec in `01_ARCHITECTURE.md`
