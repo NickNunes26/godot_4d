@@ -105,6 +105,25 @@ func _init() -> void:
 	_check("K1 type from rule", by_id["K1"].type, "fill_up")
 	_check("K1 batched (not a staggered type)", by_id["K1"].batch, true)
 	_check("K2 falls back to default type", by_id["K2"].type, "scale_up")
+	var no_rules := IfcMapping.new()
+	no_rules.default_type = "install"
+	_check("a value that is a type name needs no rule", IFCScheduleGenerator._type_for(" Fill_Up ", no_rules), "fill_up")
+	_check("any other value still gets the default", IFCScheduleGenerator._type_for("concrete", no_rules), "install")
+	_check("no rule matches: the value's own name", IFCScheduleGenerator._type_for("rise_up", m), "rise_up")
+	no_rules.type_rules = [{"contains": "rise", "type": "fill_up"}]
+	_check("a rule wins over the value's own name", IFCScheduleGenerator._type_for("rise_up", no_rules), "fill_up")
+
+	print("=== Project XML: animation type from a custom field")
+	var xml_tasks := [
+		{"extended": {"1": "Cimentación", "2": "fill_up", "3": "Zapatas"}},
+		{"extended": {"1": "Estrutura", "2": "rise_up"}},
+		{"predecessors": []},
+	]
+	_check("the field whose values are all types is found", ScheduleProjectXmlIO.animation_type_field(xml_tasks), "2")
+	_check("no such field -> none", ScheduleProjectXmlIO.animation_type_field([{"extended": {"1": "fill_up"}}, {"extended": {"1": "Pilares"}}]), "")
+	var xml_action := {"id": "C10", "type": "install", "batch": false}
+	ScheduleProjectXmlIO.new().apply_task_onto_action(xml_action, xml_tasks[0], {}, "2")
+	_check("XML type and its batch applied", [xml_action.type, xml_action.batch], ["fill_up", true])
 	_check("label comes from the mapped property", String(by_id["K1"].comment).begins_with("Footing"), true)
 	# K3 has an id but no usable date: its prefix is its own name, which is what
 	# the adapter called it -- not its zone, which would match nothing.

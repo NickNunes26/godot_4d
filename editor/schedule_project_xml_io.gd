@@ -275,6 +275,16 @@ func _capture_field(task: Dictionary, pred: Dictionary, parent: String, field: S
 			"PredecessorUID": pred["uid"] = text
 			"Type": pred["type"] = text.to_int()
 			"LinkLag": pred["lag"] = text.to_int()
+	elif parent == "ExtendedAttribute" and task.has("predecessors"):
+		# A task's custom field (Text1, Text2...): <FieldID> comes before its
+		# <Value>. The project-level definitions (FieldID/FieldName/Alias) sit
+		# outside any Task, where `task` is still the empty placeholder.
+		match field:
+			"FieldID": task["_field_id"] = text
+			"Value":
+				if not task.has("extended"):
+					task["extended"] = {}
+				task["extended"][task.get("_field_id", "")] = text
 	elif parent == "Task":
 		match field:
 			"UID": task["uid"] = text
@@ -284,6 +294,24 @@ func _capture_field(task: Dictionary, pred: Dictionary, parent: String, field: S
 			"Milestone": task["milestone"] = (text == "1")
 			"Summary": task["summary"] = (text == "1")
 			"IsNull": task["is_null"] = (text == "1")
+
+## The custom field (by FieldID) holding each task's animation type: the one
+## whose every non-empty value is an AnimationApplier type name. Found by its
+## values, not its name, so it works whatever the column is called or in
+## whatever language ("Tipo de animación", "Animation"...). "" when no field
+## qualifies.
+static func animation_type_field(tasks: Array) -> String:
+	var candidates: Dictionary = {} # field_id -> still qualifies
+	for task in tasks:
+		for field_id in task.get("extended", {}):
+			var value := str(task["extended"][field_id]).strip_edges().to_lower()
+			if value == "":
+				continue
+			candidates[field_id] = candidates.get(field_id, true) and value in AnimationApplier.TYPES
+	for field_id in candidates:
+		if candidates[field_id]:
+			return field_id
+	return ""
 
 func _task_start_date(task: Dictionary) -> String:
 	var start: String = task.get("start", "")
@@ -328,7 +356,15 @@ func _task_duration_days(task: Dictionary) -> float:
 ## inert and silently ignore the imported dependency graph). Otherwise the
 ## task's own literal Start date is used. duration_days is always set from
 ## Finish - Start when both parse, regardless of which start-source won.
-func apply_task_onto_action(action: Dictionary, task: Dictionary, uid_to_action_id: Dictionary) -> void:
+##
+## type_field (from animation_type_field()) also sets the action's type, and
+## its batch the way the IFC generator derives it -- the plan is where the
+## method of each activity is decided (a pour is fill_up), so it wins.
+func apply_task_onto_action(action: Dictionary, task: Dictionary, uid_to_action_id: Dictionary, type_field: String = "") -> void:
+	var anim_type := str(task.get("extended", {}).get(type_field, "")).strip_edges().to_lower()
+	if type_field != "" and anim_type in AnimationApplier.TYPES:
+		action["type"] = anim_type
+		action["batch"] = IFCScheduleGenerator.batch_for(anim_type)
 	var start_date: String = _task_start_date(task)
 	var duration_days: float = _task_duration_days(task)
 	if duration_days > 0.0:

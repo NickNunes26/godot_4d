@@ -39,8 +39,8 @@ Contents: [1. What you need](#1-what-you-need) · [2. Install](#2-install) ·
    `addons/`.
 4. In Godot: **Project → Project Settings → Plugins**, tick **Enabled** for both
    **Build4D** and **GDIFC**.
-5. Restart the editor once (**Project → Reload Current Project**). A dock called
-   **TimelineDock** appears at the bottom left.
+5. Restart the editor once (**Project → Reload Current Project**). A tab called
+   **Build4D** appears in the upper-right dock, next to Inspector and Node.
 
 ## 3. Try the demo
 
@@ -52,12 +52,16 @@ installed correctly.
 ## 4. Prepare your scene
 
 1. **Scene → New Scene**, choose **3D Scene**. Rename the root if you like (e.g. `Site`).
-2. Right-click the root → **Add Child Node** → **Node3D**. Name it `SequenceManager`.
-3. With that node selected, drag `addons/construction_4d_tool/runtime/sequence_manager.gd` from
-   the FileSystem panel onto the **Script** field in the Inspector.
-4. Save the scene (**Ctrl+S**), for example as `res://site.tscn`.
+2. Save the scene (**Ctrl+S**), for example as `res://site.tscn`.
 
-The dock now says **Target: SequenceManager**. You do not need to add a camera, sky or light:
+The tool is driven by a `SequenceManager` node. You do not add it yourself: the first **Load IFC
+(4D)** creates it (it is a `Node3D` with `runtime/sequence_manager.gd`, so you will not find it in
+**Add Child Node**), and the dock then says **Target: SequenceManager**. For a schedule without an
+IFC model, add it by hand: right-click the root → **Add Child Node** → **Node3D**, name it
+`SequenceManager`, and drag `addons/construction_4d_tool/runtime/sequence_manager.gd` from the
+FileSystem panel onto its **Script** field in the Inspector.
+
+You do not need to add a camera, sky or light:
 if the scene has none when you press Play, the tool adds a camera framed on the building, a
 sky and a sun for that run. You can add your own later ([section 11](#11-record-a-video)).
 
@@ -74,7 +78,7 @@ sky and a sun for that run. You can add your own later ([section 11](#11-record-
    | **End date** | The end date property. | This **or** Duration |
    | **Duration (days)** | The duration property. | This **or** End date |
    | **Display name** | A readable name for the activity. | No |
-   | **Decide type from** + rules | A property that tells how each element appears (e.g. a column whose values are `fill_up`, `rise_up`...). Add one rule per value: *contains* `fill_up` → `fill_up`. | No |
+   | **Decide type from** + rules | A property that tells how each element appears (e.g. a column whose values are `fill_up`, `rise_up`...). Values that already are type names are used as they are; add a rule only to translate other values: *contains* `hormigón` → `fill_up`. | No |
    | **Default type** | The animation for elements no rule matches. | — |
 
    **OK** stays greyed out until the required fields are chosen. Press **OK**.
@@ -110,7 +114,11 @@ ID. Elements with no dates (existing ground, for instance) stay visible from day
 4. Press **Recalculate**, then **Save to JSON**. Without **Save to JSON**, the imported dates are
    lost when you stop the preview.
 
-The import brings in the dates and the links between tasks (predecessors and lags).
+The import brings in the dates and the links between tasks (predecessors and lags). It also sets
+each action's animation type when the plan has a custom text column (e.g. *Text2*, named *Tipo de
+animación*) holding type names (`fill_up`, `rise_up`...): the column is recognised by its values,
+whatever it is called. To make the Pilares a concrete pour, write `fill_up` in that column for
+their tasks in Project and import again.
 
 ### C. You already have a `construction_steps.json`
 
@@ -241,7 +249,7 @@ Size**) is the video size; 1920 × 1080 is standard.
 
 | Problem | What to do |
 |---|---|
-| The dock says **No SequenceManager found in the open scene** | Do [section 4](#4-prepare-your-scene): the scene needs a node with `sequence_manager.gd`. |
+| The dock says **No SequenceManager found in the open scene** | Normal before the first import: **Load IFC (4D)** creates it. Without an IFC, add it by hand as in [section 4](#4-prepare-your-scene). |
 | **Load IFC (4D)** does nothing; the Output panel says GDIFC is not installed | Enable **GDIFC** in Project Settings → Plugins and restart the editor. |
 | **OK** is greyed out in **Map IFC Properties** | Choose Element ID, Start date, and End date or Duration. |
 | The mapping window no longer appears | The saved answers are reused. Use **Edit IFC mapping** to change them. |

@@ -15,7 +15,7 @@ extends RefCounted
 const SECONDS_PER_DAY := 86400.0
 
 ## The two animation types that describe placing a discrete manufactured unit,
-## and are therefore the exception to automatic batching (see _batch_for()).
+## and are therefore the exception to automatic batching (see batch_for()).
 ## Everything else is treated as one pour split into several meshes, which
 ## must move together.
 const _STAGGERED_TYPES: Array = ["install", "drop_in"]
@@ -101,7 +101,7 @@ static func generate(parts: Variant, mapping: IfcMapping, existing: Dictionary =
 		var g: Dictionary = groups[key]
 		var derived_type := _type_for(g.type_value, mapping)
 		var resolved := _resolve_type_and_batch(key, derived_type, existing_actions, mapping)
-		derived[key] = {"type": derived_type, "batch": _batch_for(derived_type)}
+		derived[key] = {"type": derived_type, "batch": batch_for(derived_type)}
 		actions.append({
 			"id": key,
 			"target_prefix": key,
@@ -157,7 +157,7 @@ static func generate(parts: Variant, mapping: IfcMapping, existing: Dictionary =
 ##   - existing value differs -> the author changed it, keep theirs;
 ##   - no record of the last derivation -> keep the existing value (conservative).
 static func _resolve_type_and_batch(id: String, derived_type: String, existing_actions: Dictionary, mapping: IfcMapping) -> Dictionary:
-	var derived_batch := _batch_for(derived_type)
+	var derived_batch := batch_for(derived_type)
 	if not existing_actions.has(id):
 		return {"type": derived_type, "batch": derived_batch}
 	var ex: Dictionary = existing_actions[id]
@@ -285,18 +285,24 @@ static func _zone_prefix_of(part: Node) -> String:
 ## split for modelling convenience, not separate operations. Being explicit
 ## also makes it visible in the JSON and the inspector, where it is one toggle
 ## to change.
-static func _batch_for(anim_type: String) -> bool:
+static func batch_for(anim_type: String) -> bool:
 	return not _STAGGERED_TYPES.has(anim_type)
 
 
-## First matching user rule wins; otherwise the mapping's default type.
+## First matching user rule wins; then a value that already is a type name
+## (a model carrying `fill_up` needs no rule to say so); otherwise the
+## mapping's default type. Without the middle step such a model with no rules
+## got the default for every action -- `install` made everything a crane lift,
+## and so a clash-checked mover.
 static func _type_for(type_value, mapping: IfcMapping) -> String:
 	if type_value == null:
 		return mapping.default_type
-	var lower := str(type_value).to_lower()
+	var lower := str(type_value).strip_edges().to_lower()
 	for rule in mapping.type_rules:
 		if lower.contains(str(rule["contains"]).to_lower()):
 			return str(rule["type"])
+	if lower in AnimationApplier.TYPES:
+		return lower
 	return mapping.default_type
 
 

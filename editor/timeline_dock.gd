@@ -681,20 +681,14 @@ func _recenter_to_origin() -> void:
 func _adapt_for_4d_tool(mapping: IfcMapping) -> void:
 	var current_scene_root = EditorInterface.get_edited_scene_root()
 	var sequence_manager := _find_sequence_manager(current_scene_root)
+	if not sequence_manager:
+		sequence_manager = _create_sequence_manager(current_scene_root)
 	var source_file := _ifc_source_path.get_file()
-	# Names other models in the scene already use (none without a SequenceManager).
-	var taken := IfcSceneModels.taken_part_names(sequence_manager, source_file) if sequence_manager else {}
+	# Names other models in the scene already use.
+	var taken := IfcSceneModels.taken_part_names(sequence_manager, source_file)
 	var container := GDIFC4DAdapter.adapt(_ifc_manager, mapping, taken)
 	_ifc_manager.queue_free()
 	_ifc_manager = null
-
-	if not sequence_manager:
-		push_warning("4D dock: no SequenceManager found in the open scene -- parented parts under the scene root instead. Add a SequenceManager node and re-import, or move 'IFCParts' under one and set its parts_container_path yourself.")
-		current_scene_root.add_child(container, true)
-		_own_recursive(container, current_scene_root)
-		print("4D dock: imported %d part(s) into '%s'. Save the scene to persist them." % [
-			container.get_child_count(), current_scene_root.get_path_to(container)])
-		return
 
 	var fresh := GeoOrigin.from_ifc_import(_ifc_import_info, _ifc_framing_shift)
 	if not _ifc_import_info.get("map_conversion", {}).is_empty() and _ifc_framing_shift.length() > 100000.0:
@@ -715,6 +709,19 @@ func _adapt_for_4d_tool(mapping: IfcMapping) -> void:
 	if models.size() > 1 and models.any(func(c): return not c.has_meta(IfcSceneModels.SOURCE_META)):
 		print("4D dock: the scene holds a model imported before 0.5.0 (no source file recorded). If '%s' is a newer version of it, delete the old container and remove it from the SequenceManager." % source_file)
 	_store_geo_origin(sequence_manager, result.geo_changed)
+
+## sequence_manager.gd has no class_name, so it is not in Add Child Node: a
+## scene without one gets it here, on the first IFC import, instead of the
+## parts landing under the scene root where nothing else can find them.
+func _create_sequence_manager(scene_root: Node) -> Node:
+	var sequence_manager := Node3D.new()
+	sequence_manager.name = "SequenceManager"
+	sequence_manager.set_script(SequenceManagerScript)
+	scene_root.add_child(sequence_manager, true)
+	sequence_manager.owner = scene_root
+	print("4D dock: the scene had no SequenceManager -- added '%s'." % scene_root.get_path_to(sequence_manager))
+	_refresh_target()
+	return sequence_manager
 
 ## Points the terrain at the (possibly new) primary container and origin, then
 ## lets the Terreno section act on the import.
@@ -1070,6 +1077,7 @@ func _apply_project_xml_import(tasks: Array, matched: Dictionary) -> void:
 	for task_index in matched.keys():
 		uid_to_action_id[tasks[task_index].get("uid", "")] = matched[task_index].anchor_id
 
+	var type_field := ScheduleProjectXmlIO.animation_type_field(tasks)
 	var needs_finish_check: Array = [] # [{task_index, terminal_id}]
 	var updated := 0
 	for task_index in matched.keys():
@@ -1078,7 +1086,7 @@ func _apply_project_xml_import(tasks: Array, matched: Dictionary) -> void:
 		var terminal_id: String = entry.terminal_id
 		if not actions_by_id.has(anchor_id):
 			continue
-		_project_xml_io.apply_task_onto_action(actions_by_id[anchor_id], tasks[task_index], uid_to_action_id)
+		_project_xml_io.apply_task_onto_action(actions_by_id[anchor_id], tasks[task_index], uid_to_action_id, type_field)
 		updated += 1
 		if terminal_id != anchor_id:
 			needs_finish_check.append({"task_index": task_index, "terminal_id": terminal_id})
@@ -1111,7 +1119,8 @@ func _apply_project_xml_import(tasks: Array, matched: Dictionary) -> void:
 			persisted[name] = matched[task_index]
 	_project_xml_io.save_mapping(mapping_path, persisted)
 
-	print("Timeline dock: imported %d action(s) from Project XML" % updated)
+	print("Timeline dock: imported %d action(s) from Project XML%s" % [updated,
+		", animation types from its custom field %s" % type_field if type_field != "" else " (no custom field of animation types found, types unchanged)"])
 	if not mismatches.is_empty():
 		print("Timeline dock: %d finish mismatch(es) -- phase template or Project estimate may need a look:" % mismatches.size())
 		for m in mismatches:

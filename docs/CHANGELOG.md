@@ -5,6 +5,22 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## Unreleased
 
+**Animation types from the model and the plan, and no more phantom crane lifts**
+(`ifc/ifc_schedule_generator.gd`, `editor/schedule_project_xml_io.gd`). A "Decide type from"
+property whose values already are type names (`fill_up`, `rise_up`...) now gives those types with no
+rules. Before, such a model with no rules got the default type for every action; with `install` as
+the default that made every action a crane lift, and every crane lift is clash-checked, so
+excavation, rebar and everything else reported clashes against each other. Import Project XML now
+also sets each action's type (and its batching) from the plan's custom text column whose values are
+type names, found by its values rather than its name.
+
+**Load IFC (4D) creates the SequenceManager** (`editor/timeline_dock.gd`). The node is a
+`Node3D` carrying `runtime/sequence_manager.gd` with no `class_name`, so it cannot be found in
+Add Child Node, and a scene without one used to get its parts under the scene root, where
+Generate 4D Schedule and Edit IFC mapping could not find them (both only warned in the Output).
+The import now adds a `SequenceManager` under the scene root when there is none and imports into
+it as usual.
+
 **The dock no longer draws over the Scene tree** (`editor/timeline_dock.tscn`). Its root was a
 plain `Control` whose `VBox` was anchored to fill it and allowed to grow both ways, with nothing
 clipping it. Once Start Preview added the timeline and the inspector grid, the content needed more

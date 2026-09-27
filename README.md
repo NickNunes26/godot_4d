@@ -35,15 +35,15 @@ principio a fin en un proyecto nuevo.
 Copy this folder into your project as `addons/construction_4d_tool/`. For IFC models also install
 **GDIFC** from the Godot Asset Library ([asset 4212](https://godotengine.org/asset-library/asset/4212),
 source [Muniz1994/GDIFCpub](https://github.com/Muniz1994/GDIFCpub)) as `addons/GDIFC/`. Then
-enable both in **Project → Project Settings → Plugins** and restart the editor once. A dock called
-**TimelineDock** appears at the bottom left.
+enable both in **Project → Project Settings → Plugins** and restart the editor once. A tab called
+**Build4D** appears in the upper-right dock, next to Inspector and Node.
 
 Copia esta carpeta en tu proyecto como `addons/construction_4d_tool/`. Para modelos IFC instala
 también **GDIFC** desde la Asset Library de Godot
 ([asset 4212](https://godotengine.org/asset-library/asset/4212), código fuente
 [Muniz1994/GDIFCpub](https://github.com/Muniz1994/GDIFCpub)) como `addons/GDIFC/`. Después activa
 los dos en **Proyecto → Configuración del proyecto → Plugins** y reinicia el editor una vez.
-Aparece un panel llamado **TimelineDock** abajo a la izquierda.
+Aparece una pestaña llamada **Build4D** en el panel superior derecho, junto a Inspector y Nodo.
 
 To check the install, open `examples/demo.tscn` and press **F6**: a small building of boxes
 builds itself in ten days. / Para comprobar la instalación, abre `examples/demo.tscn` y pulsa

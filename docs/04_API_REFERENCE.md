@@ -1034,7 +1034,7 @@ Phase 3, all under `addons/construction_4d_tool/editor/`. Documented in depth in
 | `ScheduleProjectXmlIO` | `schedule_project_xml_io.gd` | Microsoft Project **XML Interchange** export/import (not the binary `.mpp` format) |
 | `ProjectXmlMappingDialog` | `project_xml_mapping_dialog.gd` | One-time manual task→action mapping for foreign Project files |
 
-`plugin.gd` is the `EditorPlugin` entry point and is deliberately thin — it only instantiates the dock scene and adds it to `DOCK_SLOT_LEFT_BR`.
+`plugin.gd` is the `EditorPlugin` entry point and is deliberately thin — it only instantiates the dock scene and adds it to `DOCK_SLOT_RIGHT_UL` (the upper-right dock, beside GDIFC), naming the node `Build4D` so that is the tab title.
 
 ---
 

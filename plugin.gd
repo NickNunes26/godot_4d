@@ -14,7 +14,8 @@ var _dock: Control = null
 
 func _enter_tree() -> void:
 	_dock = TimelineDockScene.instantiate()
-	add_control_to_dock(DOCK_SLOT_LEFT_BR, _dock)
+	_dock.name = "Build4D"  # the dock tab shows the node name
+	add_control_to_dock(DOCK_SLOT_RIGHT_UL, _dock)
 
 func _exit_tree() -> void:
 	if not _dock:

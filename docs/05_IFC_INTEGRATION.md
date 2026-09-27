@@ -16,7 +16,8 @@ date conventions. **This plugin therefore knows no property names.** You look at
 
 ## Workflow (editor dock)
 
-1. Open the scene that will hold the model and make sure it contains a `SequenceManager` node.
+1. Open the scene that will hold the model. If it has no `SequenceManager` (a `Node3D` with
+   `runtime/sequence_manager.gd`), the import in step 5 adds one under the scene root.
 2. **Load IFC (4D)** and pick the file.
 3. The tool reads the model and **scans every property its parts carry**. The mapping dialog opens.
 4. Choose, per role (see below). Each entry shows the property path, how many parts carry it, and
@@ -60,7 +61,7 @@ float32 at map magnitude.
 | Display name | no | Written into the action's `comment`. |
 | Decide type from | no | The property the type rules below are matched against. |
 | Default type | — | Animation type for an action no rule matches (`scale_up` unless you change it). |
-| Type rules | no | Ordered "value contains *text* → *type*"; the first match wins, case-insensitive. |
+| Type rules | no | Ordered "value contains *text* → *type*"; the first match wins, case-insensitive. A value that no rule matches but that is itself a type name (`fill_up`) is used as that type; only other values fall back to the default type. |
 | Ignore dates equal to | no | Placeholder dates a model uses for "not scheduled". Empty unless you add some. |
 
 Properties are addressed by their **exact path** (`property set / property`), never by suffix, so

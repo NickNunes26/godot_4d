@@ -40,8 +40,8 @@ Contenido: [1. Qué necesitas](#1-qué-necesitas) · [2. Instalación](#2-instal
    carpeta `addons/` de tu proyecto.
 4. En Godot: **Proyecto → Configuración del proyecto → Plugins**, marca **Activado** en
    **Build4D** y en **GDIFC**.
-5. Reinicia el editor una vez (**Proyecto → Recargar proyecto actual**). Aparece un panel llamado
-   **TimelineDock** abajo a la izquierda.
+5. Reinicia el editor una vez (**Proyecto → Recargar proyecto actual**). Aparece una pestaña llamada
+   **Build4D** en el panel superior derecho, junto a Inspector y Nodo.
 
 ## 3. Prueba el ejemplo
 
@@ -54,13 +54,17 @@ esto funciona, el addon está bien instalado.
 
 1. **Escena → Nueva escena**, elige **Escena 3D**. Si quieres, cambia el nombre de la raíz (por
    ejemplo `Obra`).
-2. Clic derecho en la raíz → **Añadir nodo hijo** → **Node3D**. Llámalo `SequenceManager`.
-3. Con ese nodo seleccionado, arrastra
-   `addons/construction_4d_tool/runtime/sequence_manager.gd` desde el panel Sistema de archivos al
-   campo **Script** del Inspector.
-4. Guarda la escena (**Ctrl+S**), por ejemplo como `res://obra.tscn`.
+2. Guarda la escena (**Ctrl+S**), por ejemplo como `res://obra.tscn`.
 
-El panel indica ahora **Target: SequenceManager**. No hace falta añadir cámara, cielo ni luz: si
+La herramienta funciona a través de un nodo `SequenceManager`. No tienes que añadirlo tú: el
+primer **Load IFC (4D)** lo crea (es un `Node3D` con `runtime/sequence_manager.gd`, por eso no
+aparece en **Añadir nodo hijo**) y el panel indica entonces **Target: SequenceManager**. Para un
+cronograma sin modelo IFC, añádelo a mano: clic derecho en la raíz → **Añadir nodo hijo** →
+**Node3D**, llámalo `SequenceManager` y arrastra
+`addons/construction_4d_tool/runtime/sequence_manager.gd` desde el panel Sistema de archivos a su
+campo **Script** del Inspector.
+
+No hace falta añadir cámara, cielo ni luz: si
 la escena no los tiene al pulsar Play, la herramienta añade para esa ejecución una cámara
 encuadrada en el edificio, un cielo y un sol. Puedes poner los tuyos más adelante
 ([apartado 11](#11-graba-un-vídeo)).
@@ -78,7 +82,7 @@ encuadrada en el edificio, un cielo y un sol. Puedes poner los tuyos más adelan
    | **End date** | La propiedad con la fecha de fin. | Esta **o** la duración |
    | **Duration (days)** | La propiedad con la duración. | Esta **o** la fecha de fin |
    | **Display name** | Un nombre legible de la actividad. | No |
-   | **Decide type from** + reglas | Una propiedad que diga cómo aparece cada elemento (p. ej. una cuyos valores son `fill_up`, `rise_up`...). Añade una regla por valor: *contiene* `fill_up` → `fill_up`. | No |
+   | **Decide type from** + reglas | Una propiedad que diga cómo aparece cada elemento (p. ej. una cuyos valores son `fill_up`, `rise_up`...). Los valores que ya son nombres de tipo se usan tal cual; añade una regla solo para traducir otros valores: *contiene* `hormigón` → `fill_up`. | No |
    | **Default type** | La animación de los elementos a los que no se aplica ninguna regla. | — |
 
    **OK** sigue en gris hasta que eliges los campos obligatorios. Pulsa **OK**.
@@ -118,7 +122,11 @@ primer día.
 4. Pulsa **Recalculate** y después **Save to JSON**. Sin **Save to JSON**, las fechas importadas se
    pierden al detener la vista previa.
 
-La importación trae las fechas y los vínculos entre tareas (predecesoras y retrasos).
+La importación trae las fechas y los vínculos entre tareas (predecesoras y retrasos). También fija
+el tipo de animación de cada acción si el plan tiene una columna de texto personalizada (p. ej.
+*Texto2*, llamada *Tipo de animación*) con nombres de tipo (`fill_up`, `rise_up`...): la columna se
+reconoce por sus valores, se llame como se llame. Para que los Pilares sean un hormigonado, escribe
+`fill_up` en esa columna para sus tareas en Project e impórtalo de nuevo.
 
 ### C. Ya tienes un `construction_steps.json`
 
@@ -252,7 +260,7 @@ proyecto → Display → Window → Size**) es el tamaño del vídeo; 1920 × 10
 
 | Problema | Qué hacer |
 |---|---|
-| El panel dice **No SequenceManager found in the open scene** | Haz el [apartado 4](#4-prepara-la-escena): la escena necesita un nodo con `sequence_manager.gd`. |
+| El panel dice **No SequenceManager found in the open scene** | Es normal antes de la primera importación: **Load IFC (4D)** lo crea. Sin IFC, añádelo a mano como en el [apartado 4](#4-prepara-la-escena). |
 | **Load IFC (4D)** no hace nada; el panel Salida dice que GDIFC no está instalado | Activa **GDIFC** en Configuración del proyecto → Plugins y reinicia el editor. |
 | **OK** está en gris en **Map IFC Properties** | Elige Element ID, Start date, y End date o Duration. |
 | Ya no aparece la ventana de propiedades | Se reutilizan las respuestas guardadas. Usa **Edit IFC mapping** para cambiarlas. |
