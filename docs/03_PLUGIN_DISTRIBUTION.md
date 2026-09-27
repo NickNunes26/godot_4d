@@ -98,7 +98,7 @@ addons/construction_4d_tool/
 
 ```ini
 [plugin]
-name = "Construction 4D Tool"
+name = "Build4D"
 description = "A timeline-based 4D construction visualization tool for Godot 4"
 author = "Your Name/Organization"
 version = "1.0.0"
@@ -138,7 +138,7 @@ func _exit_tree():
    git tag v1.0.0
    git push origin v1.0.0
    # Then create a GitHub Release with:
-   # - Name: "Construction 4D Tool v1.0.0"
+   # - Name: "Build4D v1.0.0"
    # - Description: feature summary, known limitations, install instructions
    # - Attach: construction_4d_tool-1.0.0.zip (the addons/ directory, zipped)
    ```
@@ -173,7 +173,7 @@ func _exit_tree():
 ```
 User downloads: construction_4d_tool-main.zip
 Extracts to: MyProject/addons/construction_4d_tool/
-Enable in: Project Settings → Plugins → "Construction 4D Tool" → checkbox → Enable
+Enable in: Project Settings → Plugins → "Build4D" → checkbox → Enable
 Restart Godot
 ```
 - Allows user to modify plugin code
@@ -192,7 +192,7 @@ Restart Godot
 ### Path C: In-Editor Install (Asset Library)
 ```
 User opens: AssetLib tab inside the Godot editor
-Searches: "Construction 4D Tool"
+Searches: "Build4D"
 Clicks: Download → Install (Godot extracts the ZIP into addons/)
 Enable in: Project Settings → Plugins
 ```
@@ -355,7 +355,7 @@ var ui = load("res://UI/timeline_ui.tscn").instantiate()
 ### README.md (for plugin root)
 
 ```markdown
-# Construction 4D Tool
+# Build4D
 
 A timeline-based 4D construction visualization plugin for Godot 4.
 
@@ -370,7 +370,7 @@ A timeline-based 4D construction visualization plugin for Godot 4.
 
 1. Download `construction_4d_tool-1.0.0.zip` from [GitHub Releases](https://github.com/...)
 2. Extract into your Godot project root
-3. Enable the plugin: Project Settings → Plugins → "Construction 4D Tool" → checkbox
+3. Enable the plugin: Project Settings → Plugins → "Build4D" → checkbox
 4. Restart Godot
 
 ## Quick Start

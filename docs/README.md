@@ -544,7 +544,7 @@ Headless tests live in `tests/` (`test_ifc_mapping.gd`, `test_geo.gd`, `test_ter
 
 `addons/construction_4d_tool/` is a minimal Godot addon (`plugin.cfg` + `plugin.gd`)
 whose sole job is to mount `editor/timeline_dock.gd` — a dock (enable via Project
-Settings → Plugins → "Construction 4D Tool") that scrubs the construction timeline
+Settings → Plugins → "Build4D") that scrubs the construction timeline
 **live in the 3D viewport of the currently edited scene, without entering Play mode**.
 It reuses `ConstructionSchedule`, `TimelineController`, `AnimationApplier`, and
 `SpatialGrouper` exactly as they run at runtime — this is a new front-end, not a core

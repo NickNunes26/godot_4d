@@ -6,7 +6,7 @@ and two walls. `demo_steps.json` schedules them.
 ## In the editor (no Play needed)
 
 1. Enable the plugin (Project Settings → Plugins).
-2. Open `demo.tscn`. Open the **Construction 4D Tool** dock.
+2. Open `demo.tscn`. Open the **Build4D** dock.
 3. Press **Start Preview**, then drag the slider. The parts appear in schedule order.
 4. Press **Stop Preview** when done. This restores every part to how the scene was saved.
 

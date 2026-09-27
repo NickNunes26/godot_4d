@@ -1,4 +1,4 @@
-# Construction 4D Tool
+# Build4D
 
 **Step-by-step guide:** [GUIDE.md](GUIDE.md) (English) · **Guía paso a paso:** [GUIA.md](GUIA.md) (español)
 

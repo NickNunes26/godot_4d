@@ -1,4 +1,4 @@
-# Construction 4D Tool — User guide
+# Build4D — User guide
 
 *Versión en español: [GUIA.md](GUIA.md).*
 
@@ -30,7 +30,7 @@ Contents: [1. What you need](#1-what-you-need) · [2. Install](#2-install) ·
 ## 2. Install
 
 1. Create a new project in the Godot Project Manager (renderer *Forward+*).
-2. Download **Construction 4D Tool** (this repository: the green **Code → Download ZIP** button,
+2. Download **Build4D** (this repository: the green **Code → Download ZIP** button,
    or a release) and copy its folder into your project as
    `addons/construction_4d_tool/`. The file `addons/construction_4d_tool/plugin.cfg` must exist.
 3. Download **GDIFC**, the IFC reader, from the Godot Asset Library
@@ -38,7 +38,7 @@ Contents: [1. What you need](#1-what-you-need) · [2. Install](#2-install) ·
    **AssetLib** tab, or download the ZIP and copy its `addons/GDIFC` folder into your project's
    `addons/`.
 4. In Godot: **Project → Project Settings → Plugins**, tick **Enabled** for both
-   **Construction 4D Tool** and **GDIFC**.
+   **Build4D** and **GDIFC**.
 5. Restart the editor once (**Project → Reload Current Project**). A dock called
    **TimelineDock** appears at the bottom left.
 
