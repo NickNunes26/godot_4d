@@ -224,6 +224,63 @@ static func _has_prefix(name: String, prefixes: Array) -> bool:
 	return false
 
 
+## Adds to `existing` (a schedule already on disk) the actions of `generated`
+## (a fresh generate() over every model in the scene) that nothing in it covers
+## yet, and their static prefixes; changes nothing else. Returns the ids added.
+##
+## This is what a Load IFC does when the project already has a schedule -- a
+## second model of the same site brings its own activities. A full regeneration
+## would be wrong there: it re-reads every date from the IFC (losing dates
+## imported from Project XML) and drops formwork.
+##
+## "Covers" is by prefix in both directions (`C04` covers `C04_Limpeza`, and an
+## action `C04_Limpeza` covers a generated `C04`), against every prefix the
+## schedule names -- targets, commanders, children, static and excluded lists --
+## so a hand-written schedule whose actions match the model under other ids
+## gets nothing duplicated.
+static func add_new_actions(existing: Dictionary, generated: Dictionary) -> Array:
+	var known: Array = _carry_forward(existing, "static_prefixes") + _carry_forward(existing, "excluded_prefixes")
+	var steps = existing.get("steps")
+	if not (steps is Array) or steps.is_empty() or not (steps[-1] is Dictionary):
+		steps = [{"actions": []}]
+		existing["steps"] = steps
+	for step in steps:
+		if not (step is Dictionary):
+			continue
+		for action in step.get("actions", []):
+			if not (action is Dictionary):
+				continue
+			for key in ["id", "target_prefix", "commander_prefix"]:
+				if str(action.get(key, "")).strip_edges() != "":
+					known.append(str(action[key]).strip_edges())
+			for child in action.get("child_prefixes", []):
+				if str(child).strip_edges() != "":
+					known.append(str(child).strip_edges())
+
+	var covered := func(prefix: String) -> bool:
+		return known.any(func(k): return prefix.begins_with(k) or k.begins_with(prefix))
+
+	var added: Array = []
+	var target: Array = steps[-1].get("actions", [])
+	steps[-1]["actions"] = target
+	for step in generated.get("steps", []):
+		for action in step.get("actions", []):
+			var id := str(action.get("id", ""))
+			if id == "" or covered.call(id):
+				continue
+			target.append(action)
+			added.append(id)
+	var statics: Array = _carry_forward(existing, "static_prefixes")
+	for prefix in generated.get("static_prefixes", []):
+		if not covered.call(str(prefix)):
+			statics.append(str(prefix))
+	statics.sort()
+	existing["static_prefixes"] = statics
+	if not existing.has("excluded_prefixes"):
+		existing["excluded_prefixes"] = []
+	return added
+
+
 ## Writes a generate() result to `path` as tab-indented JSON, matching what the
 ## dock's own "Save to JSON" button produces.
 static func write_data(data: Dictionary, path: String) -> Error:

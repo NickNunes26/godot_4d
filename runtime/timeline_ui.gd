@@ -14,17 +14,19 @@ extends Control
 @onready var _play_button: Button = $VBoxContainer/HBoxContainer/PlayButton
 @onready var _speed_spinbox: SpinBox = $VBoxContainer/HBoxContainer/SpeedSpinBox
 @onready var _reset_button: Button = $VBoxContainer/HBoxContainer/ResetButton
-@onready var _scan_button: Button = $VBoxContainer/HBoxContainer/ScanCollisionsButton
 @onready var _hover_tooltip: PanelContainer = $HoverTooltip
 @onready var _hover_tooltip_label: Label = $HoverTooltip/HoverTooltipLabel
 
 var _timeline_controller: TimelineController = null
 var _schedule: ConstructionSchedule = null
-# Runs one automatic scan on the first _process() frame after wiring (not
+# Runs one automatic scan on the first _process() frame after each wiring (not
 # during set_timeline_controller()/_ready() directly -- the physics space
 # backing get_collisions() needs at least one frame to be queryable, and
 # ConstructionSchedule.get_collisions() already fails safe (returns []) if
 # queried too early, so a same-frame scan could silently find nothing).
+# There is no Scan button: the schedule cannot change while it plays, so a
+# second scan of the same schedule could only repeat the first. The dock
+# rewires after every rebuild, and each rewiring scans again.
 var _auto_scanned: bool = false
 
 func _ready() -> void:
@@ -32,7 +34,6 @@ func _ready() -> void:
 	_play_button.pressed.connect(_on_play_pressed)
 	_speed_spinbox.value_changed.connect(_on_speed_changed)
 	_reset_button.pressed.connect(_on_reset_pressed)
-	_scan_button.pressed.connect(_on_scan_pressed)
 
 ## Wires the UI to a controller/schedule and sizes the slider to the
 ## schedule's date range. Call once after TimelineController.set_schedule().
@@ -44,6 +45,7 @@ func set_timeline_controller(controller: TimelineController, schedule: Construct
 	_slider.max_value = date_range.max_day
 	_slider.value = date_range.min_day
 	_collision_overlay.set_range(date_range.min_day, date_range.max_day)
+	_auto_scanned = false
 	_update_display()
 
 func _on_slider_changed(value: float) -> void:
@@ -74,16 +76,12 @@ func _on_reset_pressed() -> void:
 ## Scans the full schedule for collisions, prints a summary to the console,
 ## and paints red zones + hover tooltips on the slider via CollisionOverlay --
 ## the timeline briefly steps through every day while scanning (silent to
-## current_day/is_playing) and lands back where it started.
-func _on_scan_pressed() -> void:
-	_run_scan()
-
+## current_day/is_playing) and lands back where it started. Run once per
+## wiring, from _process().
 func _run_scan() -> void:
 	if not _timeline_controller:
 		return
-	_scan_button.disabled = true
 	var windows = _timeline_controller.scan_collisions()
-	_scan_button.disabled = false
 	_collision_overlay.set_windows(windows)
 	_print_collision_report(windows)
 	_update_display()
@@ -122,8 +120,8 @@ func _update_display() -> void:
 
 	# Phase 2: live collision warning at the current day, recomputed every
 	# display update. Distinct from CollisionOverlay's red zones, which come
-	# from an explicit full-schedule scan_collisions() scan (see
-	# _on_scan_pressed()), not from this point-in-time check.
+	# from the full-schedule scan_collisions() run once per wiring (see
+	# _run_scan()), not from this point-in-time check.
 	var collisions = _timeline_controller.get_collisions()
 	_collision_label.visible = collisions.size() > 0
 	if collisions.size() > 0:

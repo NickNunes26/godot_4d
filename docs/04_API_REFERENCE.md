@@ -603,8 +603,7 @@ Steps through the *entire* date range (not just the current day), collecting eve
 
 **Behavior**:
 - Returns `[]` immediately, without stepping, when `ConstructionSchedule.has_install_parts()` is false: only `install` parts are ever checked as movers, and walking every part through a real schedule takes over a minute
-- Called by the "Scan Collisions" button in `TimelineUI` (and once automatically on its first frame), which also prints a console report (e.g. `Day 3.10–3.40: Beam_02 ↔ Col_01`) and feeds the windows into `CollisionOverlay`
-- The overlay does not auto-refresh — re-run after editing `construction_steps.json`
+- Called by `TimelineUI` once each time it is wired to a schedule (`set_timeline_controller()` resets `_auto_scanned`; the scan runs on the next `_process()` frame) — at start, and after every rebuild in the dock. It prints a console report (e.g. `Day 3.10–3.40: Beam_02 ↔ Col_01`) and feeds the windows into `CollisionOverlay`. There is no scan button (removed in 0.7.0): the schedule cannot change between rewirings
 
 **Example**:
 ```gdscript
@@ -638,8 +637,9 @@ var windows = controller.scan_collisions()
 
 > **As-built** (Phase 2 additions marked): the shipped `timeline_ui.tscn` adds a
 > collision warning label, a `SliderStack` wrapper so `CollisionOverlay` can sit as a
-> full-rect sibling of the slider, a "Scan Collisions" button, and a top-level hover
-> tooltip — not present in the original Phase 1 design below.
+> full-rect sibling of the slider, and a top-level hover tooltip — not present in the original
+> Phase 1 design below. (A "Scan Collisions" button was there until 0.7.0; the scan now runs by
+> itself on each wiring.)
 
 ```
 TimelineUI (Control)
@@ -695,7 +695,7 @@ ui.set_timeline_controller(controller, schedule)
 - Play button pressed → `controller.is_playing = !controller.is_playing` — but if a collision is still live, `TimelineController._process()` immediately flips it back to `false` and sets `collision_paused = true` the next frame (Phase 2 hard gate; see `TimelineController._process()`)
 - Speed spinbox changed → `controller.set_speed()`
 - Reset button pressed → `controller.reset()`
-- Scan Collisions button pressed → `controller.scan_collisions()` *(Phase 2)* — also run once automatically on `TimelineUI`'s first `_process()` frame, not just on press
+- Wired to a schedule (`set_timeline_controller()`) → `controller.scan_collisions()` on the next `_process()` frame *(Phase 2)*; no button
 
 ---
 
@@ -924,7 +924,7 @@ Resolves every crane this scene should drive, keyed by node name — the same na
 **Purpose**: Paint red zones directly on the timeline slider from a full-schedule collision scan *(Phase 2, new — not in original design)*
 
 **Behavior**:
-- Fed by `TimelineController.scan_collisions()`'s merged windows, triggered by the "Scan Collisions" button in `TimelineUI`, and also run once automatically on `TimelineUI`'s first `_process()` frame (`_auto_scanned`) so the overlay is populated without a manual click
+- Fed by `TimelineController.scan_collisions()`'s merged windows, run by `TimelineUI` once per wiring (`_auto_scanned`, reset in `set_timeline_controller()`), so the overlay follows every schedule rebuild without a click
 - `mouse_filter = IGNORE` so it's completely transparent to input and never interferes with dragging the slider underneath (an earlier `PASS`-based approach with a `_get_tooltip()` hover override was abandoned because `PASS` still intercepted the slider's drag-start)
 - `find_window_at(local_x: float) -> Dictionary`: hit-tests a local x-coordinate against the same pixel math `_draw()` uses, returning the matching window dict or `{}`. Used by `TimelineUI._update_hover_tooltip()` to show a hover tooltip (colliding pair + day range) without needing `mouse_filter = PASS` at all — the tooltip reads the mouse position via `Control.get_local_mouse_position()`, a coordinate conversion rather than an input event, so the overlay never has to give up `IGNORE`
 - Does not auto-refresh mid-session — only reflects the last scan (automatic or manual); re-scan (or restart the scene) after editing `construction_steps.json`
@@ -1006,7 +1006,7 @@ const META_OWNER := "formwork_of"    # stamped on every panel, names the part it
 const GROUP := "generated_formwork"
 ```
 
-- **Call `build()` before `SequenceManager.initialize_parts()`**, so panels are registered and hidden like any other part. `SequenceManager._generate_formwork()` does this at runtime; the dock does it in Start Preview and Recalculate
+- **Call `build()` before `SequenceManager.initialize_parts()`**, so panels are registered and hidden like any other part. `SequenceManager._generate_formwork()` does this at runtime; the dock does it in Start Preview and in every rebuild after an edit
 - **Idempotent** — `build()` sweeps its own previous output first, so calling it repeatedly leaves the same scene as calling it once. This matters because the dock preview re-runs setup on every Start Preview
 - Generated nodes are deliberately **never `owner`ed**, so Godot cannot write them into the `.tscn`. Formwork is a view of the schedule plus the model, not scene content
 - Reads each part's `original_transform`/`original_aabb` metas when present and its live state when not — the first run has no metas and untouched parts; every run after has metas and mutated parts
@@ -1111,6 +1111,10 @@ The user's choice of which IFC properties mean what. A property path is an `Arra
   matching the type property, a type property value that is a type name, `TaskClassifier`'s guess
   from the type value + id + label (when `mapping.infer_types`), `mapping.default_type`.
 - `static read_existing(path) -> Dictionary`, `static write_data(data, path) -> Error`
+- `static add_new_actions(existing: Dictionary, generated: Dictionary) -> Array` — appends to
+  `existing` (in place) the actions of a fresh `generate()` that no prefix in it covers, both
+  directions (targets, commanders, children, static and excluded lists), and merges new static
+  prefixes; returns the ids added. What Load IFC does when a schedule already exists
 
 ### `TaskClassifier` (`RefCounted`, static — `core/task_classifier.gd`)
 - `static classify(texts: Variant) -> Dictionary` — `{type, batch, category, keyword}` for the
@@ -1288,8 +1292,11 @@ See `10_TERRAIN.md`. All coordinates are 64-bit `float`; nothing at map magnitud
 
 ### `TerrainPanel` (`VBoxContainer`, editor)
 - The dock's Terreno section. `refresh()`, `on_ifc_imported()` (called by the dock after an import).
-  Levelling row: **Talud H:V**, **Margen m**, **Nivelar desde el modelo**
-  (`TerrainGrading.platforms_from_model()` on the scene's model and schedule), **Terreno natural**.
+  **Nivelar para edificio** checkbox: on runs `TerrainGrading.platforms_from_model()` on the
+  scene's model and schedule with the terrain's `level_margin` / `level_slope`, off clears the
+  platforms. After a first terrain build it levels by itself when a platform found an earthwork
+  activity (`_level(sm, terrain, only_with_earthworks)`), and adds a `GeoSun` when the scene has no
+  `DirectionalLight3D` (`_ensure_sun()`). `10_TERRAIN.md`, "The dock".
 
 ## Site equipment classes (`equipment/`)
 

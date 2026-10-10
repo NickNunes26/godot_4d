@@ -24,10 +24,21 @@ date conventions. **This plugin therefore knows no property names.** You look at
    sample values.
 5. Confirm. The parts are imported into an `IFCParts_<file>` node under `SequenceManager`, and
    `parts_container_path` is pointed at it. Save the scene to keep them.
-6. **Generate 4D Schedule** writes `construction_steps.json` from your mapping.
+6. The same import writes the schedule (`_schedule_after_import()` in the dock): with no
+   `construction_steps.json` yet, the full generation from your mapping (below); with one, only
+   the actions of activities nothing in it covers (`IFCScheduleGenerator.add_new_actions()`).
 7. Start Preview and scrub.
 
-**Edit IFC mapping** reopens the dialog later. Because parts were already named from the Element ID,
+**▾** → **Generate 4D Schedule** (next to Load IFC) rewrites the whole schedule from the model: for
+after changing the mapping or the model's dates. It is not run on an import that finds a schedule
+because it re-reads every date from the IFC (losing dates imported from Project XML) and drops
+formwork. **"Covers"** in `add_new_actions()` is by prefix in both directions against every prefix
+the schedule names (targets, commanders, children, static and excluded lists), so a hand-written
+schedule whose actions match the model under other ids gets nothing duplicated; the new actions
+are appended to the last step, new static prefixes merged, and only their derived types recorded
+in the profile's `last_generated`.
+
+**▾** → **Edit IFC mapping** reopens the dialog later. Because parts were already named from the Element ID,
 that one role is locked; re-import the model to change it.
 
 ### Several models in one scene
@@ -46,7 +57,8 @@ earthworks). Load each one with **Load IFC (4D)** into the same scene (`IfcScene
   model's origin and the Output says so; move it by hand.
 - Part names must be unique across models (the timeline registers parts by name). A name another
   model already uses gets a suffix (`_2`, `_3`…), with a warning.
-- **Generate 4D Schedule**, the position check and the preview see every model.
+- Each later import adds that model's activities to the schedule; **Generate 4D Schedule**, the
+  position check and the preview see every model.
 
 Every model keeps small coordinates of its own (each is still centred on load), so nothing reaches
 float32 at map magnitude.

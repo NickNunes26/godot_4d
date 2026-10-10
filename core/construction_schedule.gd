@@ -310,7 +310,12 @@ func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_groupe
 		_min_day = 0.0
 		_max_day = 1.0
 
-	_collision_query.setup(building_parts)
+	# Only an install part is ever a mover, so without one no part can clash
+	# and the shapes would be built for nothing -- and building them (a hull and
+	# a trimesh per mesh part, from scratch) is most of what a rebuild costs.
+	# Skipping it is what lets the dock rebuild after every edit.
+	if has_install_parts():
+		_collision_query.setup(building_parts)
 
 ## Resolves an action's identity: an explicit id if present, else its
 ## commander_prefix, else its target_prefix, else "". static (uses no

@@ -74,10 +74,6 @@ value = 1.0
 layout_mode = 2
 text = "Reset"
 
-[node name="ScanCollisionsButton" type="Button" parent="VBoxContainer/HBoxContainer"]
-layout_mode = 2
-text = "Scan Collisions"
-
 [node name="HoverTooltip" type="PanelContainer" parent="."]
 visible = false
 top_level = true

@@ -110,7 +110,7 @@ func _formwork_number_for_export(action: Dictionary, key: String) -> String:
 ## real end date is known at all -- falling back to local start+duration
 ## arithmetic otherwise (e.g. no preview schedule built yet, or a plain
 ## explicit-date action). current_schedule may lag one edit behind
-## sequence_data between an edit and the dock's next Recalculate -- the same
+## sequence_data between an edit and the dock's next rebuild -- the same
 ## accepted tradeoff already documented on TimelineDock's _current_schedule.
 func _resolved_end_date_for_export(action: Dictionary, current_schedule: ConstructionSchedule) -> String:
 	if current_schedule:

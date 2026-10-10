@@ -10,9 +10,14 @@
 ##
 ## This file is the orchestrator only: preview lifecycle, target detection,
 ## and button wiring. The schedule inspector grid lives in
-## ScheduleInspector (schedule_inspector.gd) and CSV export/import logic in
-## ScheduleCsvIO (schedule_csv_io.gd) -- both owned here as plain instances,
-## split out once this file grew past 1100 lines mixing all three concerns.
+## ScheduleInspector (schedule_inspector.gd), CSV and Project XML logic in
+## ScheduleCsvIO / ScheduleProjectXmlIO -- owned here as plain instances,
+## split out once this file grew past 1100 lines mixing those concerns.
+##
+## The layout follows the work's order (docs/README.md, "The editor dock"):
+## steps that always follow one another are one button (Load IFC also writes
+## the schedule; edits rebuild the preview by themselves; Stop Preview asks to
+## save), and what only applies while previewing is hidden, not greyed out.
 @tool
 extends Control
 
@@ -20,25 +25,34 @@ const SequenceManagerScript = preload("res://addons/construction_4d_tool/runtime
 const TimelineUIScene = preload("res://addons/construction_4d_tool/runtime/timeline_ui.tscn")
 
 @onready var _target_label: Label = $VBox/TargetLabel
-@onready var _start_button: Button = $VBox/Buttons/StartButton
-@onready var _stop_button: Button = $VBox/Buttons/StopButton
-@onready var _warning_label: Label = $VBox/WarningLabel
-@onready var _dirty_label: Label = $VBox/DirtyLabel
-@onready var _ui_container: Control = $VBox/UIContainer
-@onready var _inspector_list: GridContainer = $VBox/InspectorScroll/InspectorList
-@onready var _formwork_check: CheckBox = $VBox/FormworkBar/FormworkCheck
-@onready var _formwork_pour_spin: SpinBox = $VBox/FormworkBar/FormworkPourSpin
-@onready var _pour_check: CheckBox = $VBox/PourBar/PourCheck
-@onready var _pour_grid: GridContainer = $VBox/PourGrid
-@onready var _infer_types_button: Button = $VBox/InspectorButtons/InferTypesButton
-@onready var _recalculate_button: Button = $VBox/InspectorButtons/RecalculateButton
-@onready var _reload_button: Button = $VBox/InspectorButtons/ReloadButton
-@onready var _save_button: Button = $VBox/InspectorButtons/SaveButton
-@onready var _capture_camera_button: Button = $VBox/InspectorButtons/CaptureCameraButton
-@onready var _export_csv_button: Button = $VBox/InspectorButtons/ExportCsvButton
-@onready var _import_csv_button: Button = $VBox/InspectorButtons/ImportCsvButton
-@onready var _export_project_xml_button: Button = $VBox/InspectorButtons/ExportProjectXmlButton
-@onready var _import_project_xml_button: Button = $VBox/InspectorButtons/ImportProjectXmlButton
+@onready var _load_ifc_button: Button = $VBox/Buttons/LoadIfcButton
+@onready var _ifc_menu: MenuButton = $VBox/Buttons/IfcMenu
+@onready var _preview_button: Button = $VBox/Buttons/PreviewButton
+@onready var _import_button: Button = $VBox/Buttons/ImportButton
+@onready var _equipment_button: Button = $VBox/Buttons/EquipmentButton
+# Everything that only means something while previewing -- the timeline, the
+# inspector and its buttons, Vertido, Encofrado -- is hidden, not greyed out,
+# when the preview is off: a dock full of disabled buttons reads as clutter.
+@onready var _preview_section: Control = $VBox/PreviewSection
+@onready var _ui_container: Control = $VBox/PreviewSection/UIContainer
+@onready var _inspector_list: GridContainer = $VBox/PreviewSection/InspectorScroll/InspectorList
+@onready var _formwork_check: CheckBox = $VBox/PreviewSection/FormworkBar/FormworkCheck
+@onready var _formwork_pour_spin: SpinBox = $VBox/PreviewSection/FormworkBar/FormworkPourSpin
+@onready var _pour_check: CheckBox = $VBox/PreviewSection/PourBar/PourCheck
+@onready var _pour_settings_toggle: Button = $VBox/PreviewSection/PourBar/PourSettingsToggle
+@onready var _pour_grid: GridContainer = $VBox/PreviewSection/PourGrid
+@onready var _save_button: Button = $VBox/PreviewSection/InspectorButtons/SaveButton
+@onready var _export_button: Button = $VBox/PreviewSection/InspectorButtons/ExportButton
+@onready var _infer_types_button: Button = $VBox/PreviewSection/InspectorButtons/InferTypesButton
+@onready var _capture_camera_button: Button = $VBox/PreviewSection/InspectorButtons/CaptureCameraButton
+
+## The IFC menu's items (the ▾ beside Load IFC): the two IFC actions that are
+## not a step of the usual flow -- the import generates the schedule itself.
+enum IfcMenuItem { GENERATE, EDIT_MAPPING }
+
+# Seconds after the last committed edit before the preview rebuilds: long
+# enough that clicking a SpinBox arrow five times rebuilds once.
+const _REBUILD_DELAY := 0.4
 
 var _sequence_manager: Node = null
 var _controller: TimelineController = null
@@ -74,28 +88,26 @@ var _inspector: ScheduleInspector = null
 var _csv_io := ScheduleCsvIO.new()
 var _project_xml_io := ScheduleProjectXmlIO.new()
 
-# True whenever sequence_data has been edited since the last schedule
-# rebuild -- see _set_schedule_dirty()/_on_recalculate_pressed(). Field
-# edits used to call _rebuild_schedule() directly on every keystroke, which
-# reconstructs a whole ConstructionSchedule -- including
-# CollisionQuery.setup() (collision_query.gd), which rebuilds a convex hull +
-# trimesh PhysicsServer3D shape for every MeshInstance3D part in the project,
-# from scratch, every time. That's real, unavoidable-per-call geometry work with
-# no caching, so on a project with many parts it made every keystroke
-# noticeably slow. Edits now just mark the schedule dirty (via the Callable
-# ScheduleInspector is constructed with, see _ready()); rebuilding (and with
-# it, the 3D preview / dependency-resolved dates) only happens on demand via
-# the Recalculate button.
-var _schedule_dirty: bool = false
+# True whenever sequence_data holds edits the JSON file doesn't -- set by every
+# edit (_on_schedule_edited()), cleared by Save to JSON and by a fresh load.
+# Stop Preview asks before throwing such edits away (_stop_then()).
+var _unsaved: bool = false
 
-# Lazily-created shared file dialogs -- one per format (CSV / Project XML),
-# each reused for both its Export and Import button (see _ensure_csv_dialog()/
-# _ensure_project_xml_dialog()). The _mode fields record which action the
-# next file_selected signal should perform.
-var _csv_dialog: EditorFileDialog = null
-var _csv_dialog_mode: String = ""
-var _project_xml_dialog: EditorFileDialog = null
-var _project_xml_dialog_mode: String = ""
+# Edits don't rebuild the schedule at once: each restarts this one-shot timer
+# and the rebuild runs when it fires (_REBUILD_DELAY). A rebuild re-creates the
+# whole ConstructionSchedule, formwork and part registration; collision shapes,
+# the slowest part, only when the schedule has install actions
+# (ConstructionSchedule skips them otherwise). Per keystroke that was too slow,
+# which is why there used to be a Recalculate button; after a pause it isn't.
+var _rebuild_timer: Timer = null
+
+# One file dialog for both formats, in each direction; the format is the
+# chosen file's extension (.xml = Project XML, .csv = CSV).
+var _exchange_dialog: EditorFileDialog = null
+var _exchange_dialog_mode: String = ""
+
+# The Guardar / Descartar / Cancelar question before unsaved edits are lost.
+var _save_prompt: ConfirmationDialog = null
 
 # The active manual-mapping popup for a Project XML import with unmatched
 # tasks (see _import_project_xml()) -- null when no import is pending one.
@@ -123,14 +135,40 @@ var _sun_snapshot: Dictionary = {} # GeoSun -> Transform3D
 
 func _ready() -> void:
 	_inspector = ScheduleInspector.new(_inspector_list, _grouper, _on_schedule_edited)
-	_start_button.pressed.connect(_on_start_pressed)
-	_stop_button.pressed.connect(_on_stop_pressed)
-	_recalculate_button.pressed.connect(_on_recalculate_pressed)
+	_rebuild_timer = Timer.new()
+	_rebuild_timer.one_shot = true
+	_rebuild_timer.wait_time = _REBUILD_DELAY
+	_rebuild_timer.timeout.connect(_rebuild_schedule)
+	add_child(_rebuild_timer)
+
+	_load_ifc_button.tooltip_text = "Imports an IFC model into the open scene. The first time, a window asks which IFC properties hold the activity code and the dates.
+
+With no schedule yet, it writes construction_steps.json from the model's dates. With one, it only adds the activities of this model that the schedule doesn't have yet -- nothing already there is changed. A georeferenced model also gets its terrain."
+	_load_ifc_button.pressed.connect(func(): _stop_then(_on_load_ifc_pressed))
+	_ifc_menu.tooltip_text = "More IFC actions."
+	var menu := _ifc_menu.get_popup()
+	menu.add_item("Generate 4D Schedule", IfcMenuItem.GENERATE)
+	menu.set_item_tooltip(menu.get_item_index(IfcMenuItem.GENERATE), "Rewrites the whole schedule JSON from the model's properties. Corrected types are kept, but dates come from the IFC again (dates imported from Project XML are lost) and formwork is dropped. Only needed after changing the IFC mapping or the model's dates.")
+	menu.add_item("Edit IFC mapping", IfcMenuItem.EDIT_MAPPING)
+	menu.set_item_tooltip(menu.get_item_index(IfcMenuItem.EDIT_MAPPING), "Choose which IFC properties are the element id, dates and animation type.")
+	menu.id_pressed.connect(_on_ifc_menu_id_pressed)
+
+	_preview_button.toggle_mode = false
+	_preview_button.pressed.connect(func():
+		if _preview_active:
+			_stop_then(Callable())
+		else:
+			start_preview())
+	_import_button.tooltip_text = "Brings dates (and links) into the schedule from a Microsoft Project XML (.xml) or a CSV (.csv) file. Starts the preview if it is off. Then Save to JSON to keep them."
+	_import_button.pressed.connect(_on_import_pressed)
+	_export_button.tooltip_text = "Writes the schedule as Microsoft Project XML (.xml) or CSV for Excel (.csv) -- pick the type in the file window."
+	_export_button.pressed.connect(_on_export_pressed)
+
 	_infer_types_button.pressed.connect(_on_infer_types_pressed)
 	_infer_types_button.tooltip_text = "Sets every row's Tipo and Cadencia from what the activity is called: \"Hormigonado de zapatas\" pours, \"Mampostería\" builds up, \"Excavación\" digs, \"Carpintería\" fades in...
 
-Overwrites the rows it recognises (including hand-picked types); rows whose name says nothing it knows are left alone. The Output panel lists every change. Then Recalculate, and Save to JSON to keep it."
-	_reload_button.pressed.connect(_on_reload_pressed)
+Overwrites the rows it recognises (including hand-picked types); rows whose name says nothing it knows are left alone. The Output panel lists every change. Save to JSON to keep it."
+	_save_button.tooltip_text = "Writes the schedule, with every edit, to its JSON file. Greyed out when there is nothing new to save."
 	_save_button.pressed.connect(_on_save_pressed)
 	_capture_camera_button.pressed.connect(_on_capture_camera_pressed)
 	_capture_camera_button.tooltip_text = "Adds a camera keyframe at the currently previewed date, using wherever the editor's 3D viewport camera is right now.\n\nWritten straight to camera_track.json (its own file -- regenerating the schedule can't touch it). Applied only when recording in Movie Maker Mode, or with SequenceManager's movie_mode_override on; the free-fly camera is unaffected otherwise."
@@ -144,47 +182,22 @@ Individual rows can still opt out with their own Encofrado dropdown. Actions sho
 
 Off unless a project turns it on -- see 08_POUR_STREAM.md. Live playback only; scrubbing never spawns one."
 	_pour_check.toggled.connect(_on_pour_toggled)
+	_pour_settings_toggle.tooltip_text = "The stream's fine settings. Every one has a default worked out from the element being poured; most projects never open this."
+	_pour_settings_toggle.toggled.connect(func(_on): _refresh_pour_bar())
 	for field in _POUR_FIELDS:
 		var spin: SpinBox = _pour_grid.get_node(field.node)
 		spin.tooltip_text = field.tip
 		spin.value_changed.connect(func(v): _on_pour_field_changed(field.key, v))
-	_export_csv_button.pressed.connect(_on_export_csv_pressed)
-	_import_csv_button.pressed.connect(_on_import_csv_pressed)
-	_export_project_xml_button.pressed.connect(_on_export_project_xml_pressed)
-	_import_project_xml_button.pressed.connect(_on_import_project_xml_pressed)
 
-	var buttons_container = $VBox/InspectorButtons
-	var load_ifc_button = Button.new()
-	load_ifc_button.text = "Load IFC (4D)"
-	load_ifc_button.pressed.connect(_on_load_ifc_pressed)
-	buttons_container.add_child(load_ifc_button)
-
-	var generate_schedule_button = Button.new()
-	generate_schedule_button.text = "Generate 4D Schedule"
-	generate_schedule_button.tooltip_text = "Writes the schedule JSON from the IFC properties you selected (see Edit IFC mapping) on the imported parts."
-	generate_schedule_button.pressed.connect(_on_generate_schedule_pressed)
-	buttons_container.add_child(generate_schedule_button)
-
-	var edit_mapping_button = Button.new()
-	edit_mapping_button.text = "Edit IFC mapping"
-	edit_mapping_button.tooltip_text = "Choose which IFC properties are the element id, dates and animation type."
-	edit_mapping_button.pressed.connect(_on_edit_ifc_mapping_pressed)
-	buttons_container.add_child(edit_mapping_button)
-
-	var equipment_button = Button.new()
-	equipment_button.text = "Maquinaria"
-	equipment_button.tooltip_text = "Adds the site plant to the scene -- tower crane, mobile crane, excavator and truck -- at the positions proposed from the model, so you can see and move them.
+	_equipment_button.tooltip_text = "Adds the site plant to the scene -- tower crane, mobile crane, excavator and truck -- at the positions proposed from the model, so you can see and move them.
 
 Without this, Play adds the same machines automatically (SequenceManager > Auto Equipment). Move the TowerCraneSite / ExcavatorSite markers to place them; crane height and jib are on the SiteEquipment node. Pressing it again re-proposes the positions."
-	equipment_button.pressed.connect(_on_equipment_pressed)
-	buttons_container.add_child(equipment_button)
+	_equipment_button.pressed.connect(func(): _stop_then(_on_equipment_pressed))
 
 	_terrain_panel = TerrainPanel.new()
 	$VBox.add_child(_terrain_panel)
 
-	_dirty_label.visible = false
-	_warning_label.visible = false
-	_stop_button.disabled = true
+	_refresh_preview_controls()
 	_refresh_formwork_bar()
 	_refresh_pour_bar()
 	_refresh_target()
@@ -196,9 +209,19 @@ func _process(_delta: float) -> void:
 	_last_edited_root = root
 	# Switching scene tabs out from under an active preview would otherwise
 	# leave the previous scene's parts mutated with no way to restore them
-	# from this dock anymore -- always restore first.
+	# from this dock anymore -- always restore first. The tab has already
+	# changed, so there is no Cancel: unsaved edits are offered for saving
+	# after the fact (the data is still in hand).
 	if _preview_active:
-		stop_preview()
+		if _unsaved and _sequence_manager:
+			var path: String = _sequence_manager.construction_json_path
+			var data: Dictionary = _sequence_manager.sequence_data.duplicate(true)
+			_unsaved = false # handed to the question below
+			stop_preview()
+			_ask_save("The previous scene's schedule has unsaved edits. Save them to %s?" % path, false,
+				func(): _write_schedule(path, data), Callable())
+		else:
+			stop_preview()
 	_refresh_target()
 	if _terrain_panel:
 		_terrain_panel.refresh()
@@ -209,8 +232,18 @@ func _refresh_target() -> void:
 	if _sequence_manager:
 		_target_label.text = "Target: %s" % _sequence_manager.name
 	else:
-		_target_label.text = "No SequenceManager found in the open scene."
-	_start_button.disabled = _sequence_manager == null or _preview_active
+		_target_label.text = "No SequenceManager found in the open scene — Load IFC (4D) creates one."
+	_refresh_preview_controls()
+
+## Shows what applies to the preview's state: the toggle's label, the preview
+## section, and which buttons can act.
+func _refresh_preview_controls() -> void:
+	_preview_button.text = "Stop Preview" if _preview_active else "Start Preview"
+	_preview_button.disabled = _sequence_manager == null
+	_import_button.disabled = _sequence_manager == null
+	_equipment_button.disabled = _sequence_manager == null
+	_preview_section.visible = _preview_active
+	_save_button.disabled = not (_preview_active and _unsaved)
 
 # Identifies the target by script identity, not node name, so it isn't tied
 # to a specific scene layout (see addons/construction_4d_tool/docs/03_PLUGIN_DISTRIBUTION.md's
@@ -225,8 +258,6 @@ func _find_sequence_manager(node: Node) -> Node:
 	return null
 
 func _on_equipment_pressed() -> void:
-	if _preview_active:
-		stop_preview()
 	var scene_root := EditorInterface.get_edited_scene_root()
 	if not _sequence_manager or not scene_root:
 		push_warning("Build4D: open a scene with a SequenceManager first.")
@@ -239,11 +270,56 @@ func _on_equipment_pressed() -> void:
 		EditorInterface.get_selection().add_node(eq)
 		print("Build4D: site equipment proposed -- tower crane %.1f m under the jib, %.0f m jib. Move the TowerCraneSite / ExcavatorSite markers to place them." % [eq.tower_height, eq.jib_length])
 
-func _on_start_pressed() -> void:
-	start_preview()
+## Runs `then` once the preview is off. With unsaved edits it asks first:
+## Guardar saves and stops, Descartar stops, Cancelar leaves everything as it
+## was and `then` never runs. An empty Callable just stops.
+func _stop_then(then: Callable) -> void:
+	var finish := func():
+		_unsaved = false # saved, discarded, or there was nothing to save
+		stop_preview()
+		if then.is_valid():
+			then.call()
+	if not _preview_active or not _unsaved:
+		finish.call()
+		return
+	_ask_save("The schedule has edits that are not saved to %s." % _sequence_manager.construction_json_path, true,
+		func():
+			_on_save_pressed()
+			finish.call(),
+		finish)
 
-func _on_stop_pressed() -> void:
-	stop_preview()
+## Guardar / Descartar (/ Cancelar) question. `on_save` and `on_discard` run on
+## those buttons; Cancelar (offered when `can_cancel`) and closing the window
+## run neither.
+func _ask_save(text: String, can_cancel: bool, on_save: Callable, on_discard: Callable) -> void:
+	if _save_prompt:
+		_save_prompt.queue_free()
+	var dialog := ConfirmationDialog.new()
+	_save_prompt = dialog
+	dialog.title = "Build4D"
+	dialog.dialog_text = text
+	dialog.ok_button_text = "Guardar"
+	dialog.cancel_button_text = "Cancelar"
+	dialog.get_cancel_button().visible = can_cancel
+	dialog.add_button("Descartar", true, "discard")
+	var close := func():
+		dialog.queue_free()
+		if _save_prompt == dialog:
+			_save_prompt = null
+	dialog.confirmed.connect(func():
+		close.call()
+		if on_save.is_valid():
+			on_save.call())
+	dialog.custom_action.connect(func(action):
+		if action != "discard":
+			return
+		dialog.hide()
+		close.call()
+		if on_discard.is_valid():
+			on_discard.call())
+	dialog.canceled.connect(close)
+	add_child(dialog)
+	dialog.popup_centered()
 
 func start_preview() -> void:
 	if _preview_active or not _sequence_manager:
@@ -286,19 +362,8 @@ func start_preview() -> void:
 	_push_pour_stream()
 
 	_preview_active = true
-	_warning_label.visible = true
-	_start_button.disabled = true
-	_stop_button.disabled = false
-	_infer_types_button.disabled = false
-	_recalculate_button.disabled = false
-	_reload_button.disabled = false
-	_save_button.disabled = false
-	_capture_camera_button.disabled = false
-	_export_csv_button.disabled = false
-	_import_csv_button.disabled = false
-	_export_project_xml_button.disabled = false
-	_import_project_xml_button.disabled = false
-	_set_schedule_dirty(false)
+	_unsaved = false
+	_refresh_preview_controls()
 	_refresh_formwork_bar()
 	_refresh_pour_bar()
 	_inspector.build(_sequence_manager, _current_schedule)
@@ -341,19 +406,13 @@ func stop_preview() -> void:
 		_controller = null
 
 	_preview_active = false
-	_warning_label.visible = false
-	_stop_button.disabled = true
-	_start_button.disabled = _sequence_manager == null
-	_infer_types_button.disabled = true
-	_recalculate_button.disabled = true
-	_reload_button.disabled = true
-	_save_button.disabled = true
-	_capture_camera_button.disabled = true
-	_export_csv_button.disabled = true
-	_import_csv_button.disabled = true
-	_export_project_xml_button.disabled = true
-	_import_project_xml_button.disabled = true
-	_set_schedule_dirty(false)
+	_rebuild_timer.stop()
+	if _unsaved:
+		# Only reachable without the question (_stop_then()): the plugin being
+		# disabled. The edits were never saved and are gone.
+		push_warning("Build4D: the preview stopped with schedule edits that were not saved.")
+	_unsaved = false
+	_refresh_preview_controls()
 	_refresh_formwork_bar()
 	_refresh_pour_bar()
 	_inspector.clear()
@@ -362,10 +421,6 @@ func stop_preview() -> void:
 # Project-wide formwork (07_FORMWORK.md build order step 5, decision 9)
 # ---------------------------------------------------------------------------
 
-## Syncs the checkbox and its pour spinner from whatever the JSON currently
-## says, without re-firing their own handlers. Called wherever the inspector is
-## (re)built, since Reload from JSON and CSV/XML import can all change the root
-## block underneath the control.
 ## The Vertido spinners, in grid order: which SpinBox writes which JSON key.
 ## Driven from one table rather than six handlers, since every one of them does
 ## the identical "write this number into the root pour_stream block" job.
@@ -386,12 +441,17 @@ func _refresh_pour_bar() -> void:
 	_pour_check.disabled = not enabled
 	if not _sequence_manager:
 		_pour_check.set_pressed_no_signal(false)
+		_pour_settings_toggle.visible = false
 		_pour_grid.visible = false
 		return
 	var cfg: Dictionary = AnimationApplier.pour_stream_config(_sequence_manager.sequence_data)
 	var on: bool = not cfg.is_empty()
 	_pour_check.set_pressed_no_signal(on)
-	_pour_grid.visible = on
+	# The fine settings stay folded unless asked for: each has a default
+	# worked out from the element being poured.
+	_pour_settings_toggle.visible = on
+	_pour_settings_toggle.text = ("▾ " if _pour_settings_toggle.button_pressed else "▸ ") + "Ajustes"
+	_pour_grid.visible = on and _pour_settings_toggle.button_pressed
 	for field in _POUR_FIELDS:
 		var spin: SpinBox = _pour_grid.get_node(field.node)
 		spin.editable = enabled
@@ -427,9 +487,8 @@ func _on_pour_field_changed(key: String, value: float) -> void:
 	_on_schedule_edited()
 
 ## Hands the live controller the new settings immediately, so the next pour in
-## the running preview uses them. Without this a tuning pass would need a
-## Recalculate (or a restart) to show anything, which is exactly the slow loop
-## putting these controls in the dock is meant to remove.
+## the running preview uses them, without waiting for the rebuild that follows
+## every edit -- tuning is a quick loop of change, play, look.
 func _push_pour_stream() -> void:
 	if _controller:
 		_controller.pour_stream = AnimationApplier.pour_stream_config(_sequence_manager.sequence_data)
@@ -507,21 +566,18 @@ func _restore_materials(snapshot: Dictionary) -> void:
 		for i in range(mats.size()):
 			part.set_surface_override_material(i, mats[i])
 
-## Shows/hides the "schedule out of date" warning and enables/disables the
-## Recalculate button. Called both directly by this file's own handlers and,
-## via the Callable passed to ScheduleInspector's constructor, by every
-## inspector field edit -- see _schedule_dirty's doc comment for why edits
-## don't rebuild the schedule immediately.
-func _set_schedule_dirty(dirty: bool) -> void:
-	_schedule_dirty = dirty
-	_dirty_label.visible = dirty
-
+## Every change to sequence_data comes through here -- the inspector's fields
+## (via the Callable ScheduleInspector is built with), Vertido, Encofrado,
+## Auto types, an import: marks it unsaved and rebuilds the preview once the
+## edits pause (_rebuild_timer).
 func _on_schedule_edited() -> void:
-	_set_schedule_dirty(true)
+	_unsaved = true
+	_refresh_preview_controls()
+	if _preview_active:
+		_rebuild_timer.start()
 
 ## "Auto types": TaskClassifier over every action's id and label. Writes into
-## sequence_data like any inspector edit -- dirty until Recalculate, lost
-## without Save to JSON.
+## sequence_data like any inspector edit -- lost without Save to JSON.
 func _on_infer_types_pressed() -> void:
 	if not _sequence_manager:
 		return
@@ -551,21 +607,15 @@ static func _type_and_cadence(type, batch) -> String:
 		return str(type)
 	return "%s/%s" % [type, "together" if batch else "one by one"]
 
-func _on_recalculate_pressed() -> void:
-	_rebuild_schedule()
-	_set_schedule_dirty(false)
-
 ## Re-derives a ConstructionSchedule from the (just-edited) sequence_data and
 ## rewires the live preview controller/UI to it, preserving the day the
 ## timeline was showing. ConstructionSchedule has no incremental-update path
 ## (everything is computed once in _init), so an edit means building a new
-## one -- including CollisionQuery.setup() rebuilding a collision shape
-## for every mesh part from scratch, which is real geometry work with no
-## caching. Cheap enough for an explicit "I'm ready to see the result" action
-## (Recalculate, Start Preview, Reload from JSON); too slow to call on every
-## keystroke on a project with many parts, which is why field edits no
-## longer call this directly -- see _schedule_dirty's doc comment.
+## one -- including, for a schedule with install actions, CollisionQuery.setup()
+## rebuilding a collision shape for every mesh part from scratch. Run after the
+## edits pause (_rebuild_timer), never per keystroke.
 func _rebuild_schedule() -> void:
+	_rebuild_timer.stop()
 	if not _preview_active or not _controller or not _timeline_ui:
 		return
 	var saved_day = _controller.current_day
@@ -592,27 +642,22 @@ func _rebuild_schedule() -> void:
 	_controller.scrub_to(saved_day)
 	_inspector.refresh_dependency_dates(_current_schedule)
 
-func _on_reload_pressed() -> void:
-	if not _sequence_manager:
-		return
-	_sequence_manager.load_json()
-	_refresh_formwork_bar()
-	_refresh_pour_bar()
-	_inspector.build(_sequence_manager, _current_schedule)
-	_rebuild_schedule()
-	_set_schedule_dirty(false)
-
 func _on_save_pressed() -> void:
 	if not _sequence_manager:
 		return
-	var path: String = _sequence_manager.construction_json_path
+	if _write_schedule(_sequence_manager.construction_json_path, _sequence_manager.sequence_data):
+		_unsaved = false
+		_refresh_preview_controls()
+
+func _write_schedule(path: String, data: Dictionary) -> bool:
 	var file = FileAccess.open(path, FileAccess.WRITE)
 	if not file:
 		push_error("Timeline dock: could not open '%s' for writing" % path)
-		return
-	file.store_string(JSON.stringify(_sequence_manager.sequence_data, "\t"))
+		return false
+	file.store_string(JSON.stringify(data, "\t"))
 	file.close()
 	print("Timeline dock: saved schedule to %s" % path)
+	return true
 
 func _on_load_ifc_pressed() -> void:
 	if not ClassDB.class_exists("GDIFCManager"):
@@ -771,6 +816,9 @@ func _adapt_for_4d_tool(mapping: IfcMapping) -> void:
 			"by the georeference" if result.placement == "map" else "at the origin", models.size()] if models.size() > 1 else ""])
 	if models.size() > 1 and models.any(func(c): return not c.has_meta(IfcSceneModels.SOURCE_META)):
 		print("4D dock: the scene holds a model imported before 0.5.0 (no source file recorded). If '%s' is a newer version of it, delete the old container and remove it from the SequenceManager." % source_file)
+	# Before the terrain: levelling ties its platforms to the earthworks
+	# activities, so the schedule has to exist when the download finishes.
+	_schedule_after_import(sequence_manager, mapping)
 	_store_geo_origin(sequence_manager, result.geo_changed)
 
 ## sequence_manager.gd has no class_name, so it is not in Add Child Node: a
@@ -845,9 +893,54 @@ func _on_generate_schedule_pressed() -> void:
 		push_error("4D dock: could not write '%s' (error %d)" % [json_path, err])
 		return
 
-	print("4D dock: wrote %d action(s) to %s (%d static prefix(es), %d excluded) -- open the 4D TimelineDock and press Start Preview." % [
+	print("4D dock: wrote %d action(s) to %s (%d static prefix(es), %d excluded) -- press Start Preview to see it." % [
 		data["steps"][0]["actions"].size(), json_path,
 		data["static_prefixes"].size(), data["excluded_prefixes"].size()])
+
+func _on_ifc_menu_id_pressed(id: int) -> void:
+	match id:
+		IfcMenuItem.GENERATE:
+			_stop_then(_on_generate_schedule_pressed)
+		IfcMenuItem.EDIT_MAPPING:
+			_on_edit_ifc_mapping_pressed()
+
+## The schedule step of an import, so that Load IFC is the only step: no
+## schedule yet -> generate it from the model, as Generate 4D Schedule does;
+## a schedule already -> add only the activities it doesn't cover
+## (IFCScheduleGenerator.add_new_actions()), leaving everything in it alone --
+## a full regeneration would overwrite dates imported from Project XML and
+## drop formwork, so that stays an explicit menu choice.
+func _schedule_after_import(sequence_manager: Node, mapping: IfcMapping) -> void:
+	var json_path: String = sequence_manager.get("construction_json_path")
+	if not FileAccess.file_exists(json_path):
+		_on_generate_schedule_pressed()
+		return
+	var existing := IFCScheduleGenerator.read_existing(json_path)
+	if existing.is_empty():
+		push_warning("4D dock: %s could not be read; the schedule was not updated for this model. Use IFC ▾ > Generate 4D Schedule to write a new one." % json_path)
+		return
+	# generate() replaces mapping.last_generated wholesale; only the actions
+	# actually added should be recorded as derived, the rest were not touched.
+	var last_before: Dictionary = mapping.last_generated.duplicate(true)
+	var fresh := IFCScheduleGenerator.generate(sequence_manager.collect_part_nodes(), mapping, existing)
+	var derived: Dictionary = mapping.last_generated
+	mapping.last_generated = last_before
+	if fresh.is_empty():
+		return
+	var added := IFCScheduleGenerator.add_new_actions(existing, fresh)
+	if added.is_empty():
+		print("4D dock: %s already covers every activity of this model; left as it is." % json_path)
+		return
+	for id in added:
+		if derived.has(id):
+			mapping.last_generated[id] = derived[id]
+	mapping.save_to(IfcMapping.profile_path_for(json_path))
+	var err := IFCScheduleGenerator.write_data(existing, json_path)
+	if err != OK:
+		push_error("4D dock: could not write '%s' (error %d)" % [json_path, err])
+		return
+	print("4D dock: added %d new action(s) of this model to %s (the rest of the schedule is unchanged): %s" % [
+		added.size(), json_path, ", ".join(added)])
 
 # --- Camera keyframes -------------------------------------------------
 #
@@ -858,10 +951,10 @@ func _on_generate_schedule_pressed() -> void:
 # want, press the button.
 #
 # Unlike every other control here, this writes to disk immediately rather than
-# marking the schedule dirty. camera_track.json is a separate file that
+# marking the schedule unsaved. camera_track.json is a separate file that
 # sequence_data knows nothing about, so it has no part in the dock's
-# "mark dirty -> Recalculate -> Save to JSON" cycle; routing it through that
-# would mean Save to JSON silently saving two different files.
+# "edit -> Save to JSON" cycle; routing it through that would mean Save to
+# JSON silently saving two different files.
 
 ## Reads wherever the editor viewport camera currently is and appends it as a
 ## keyframe at the previewed date.
@@ -900,54 +993,76 @@ func _on_capture_camera_pressed() -> void:
 	print("Timeline dock: camera keyframe at %s captured -> %s (%d total)." % [
 		date if date != "" else "día %.2f" % day, path, track.keyframes.size()])
 
-# --- CSV Export/Import ------------------------------------------------
+# --- Importar… / Exportar… (Project XML and CSV) -------------------------
 #
-# The dialog lives here (EditorFileDialog needs a Node to be added as a
-# child of); the actual read/write/matching logic is in ScheduleCsvIO
-# (_csv_io), which operates on plain Node/Dictionary state so it doesn't need
-# to know about this dock's Control tree. Both directions round-trip through
-# _sequence_manager.sequence_data in memory, exactly like every other dock
-# control: Export writes out sequence_data as it currently stands (including
-# unsaved inspector edits), Import writes into sequence_data and marks the
-# schedule dirty, same as any single field edit -- Save to JSON / Recalculate
-# remain separate, explicit steps.
+# One dialog for both formats, the format being the file's extension. The
+# dialog lives here (EditorFileDialog needs a Node to be added as a child of);
+# the read/write/matching logic is in ScheduleCsvIO (_csv_io) and
+# ScheduleProjectXmlIO (_project_xml_io), which work on plain Node/Dictionary
+# state. Both directions go through _sequence_manager.sequence_data in memory,
+# like every other dock control: Export writes sequence_data as it stands
+# (unsaved edits included), Import writes into it like a field edit -- the
+# preview rebuilds, and Save to JSON keeps it.
 
-func _ensure_csv_dialog() -> EditorFileDialog:
-	if _csv_dialog:
-		return _csv_dialog
-	_csv_dialog = EditorFileDialog.new()
-	_csv_dialog.add_filter("*.csv", "CSV Files")
-	_csv_dialog.access = EditorFileDialog.ACCESS_FILESYSTEM
-	_csv_dialog.file_selected.connect(_on_csv_dialog_file_selected)
-	add_child(_csv_dialog)
-	return _csv_dialog
+func _ensure_exchange_dialog() -> EditorFileDialog:
+	if _exchange_dialog:
+		return _exchange_dialog
+	_exchange_dialog = EditorFileDialog.new()
+	_exchange_dialog.access = EditorFileDialog.ACCESS_FILESYSTEM
+	_exchange_dialog.file_selected.connect(_on_exchange_file_selected)
+	add_child(_exchange_dialog)
+	return _exchange_dialog
 
-func _default_csv_path() -> String:
+func _schedule_file_path(extension: String) -> String:
 	if not _sequence_manager:
-		return "res://schedule.csv"
+		return "res://schedule." + extension
 	var json_path: String = _sequence_manager.construction_json_path
-	return json_path.get_basename() + ".csv"
+	return json_path.get_basename() + "." + extension
 
-func _on_export_csv_pressed() -> void:
-	var dialog := _ensure_csv_dialog()
-	dialog.file_mode = EditorFileDialog.FILE_MODE_SAVE_FILE
-	dialog.current_path = _default_csv_path()
-	_csv_dialog_mode = "export"
-	dialog.popup_centered_ratio()
-
-func _on_import_csv_pressed() -> void:
-	var dialog := _ensure_csv_dialog()
+## Importing needs the schedule loaded into the inspector, so it starts the
+## preview first -- there is no "start the preview, then import" step.
+func _on_import_pressed() -> void:
+	if not _sequence_manager:
+		return
+	if not _preview_active:
+		start_preview()
+	var dialog := _ensure_exchange_dialog()
 	dialog.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILE
-	dialog.current_path = _default_csv_path()
-	_csv_dialog_mode = "import"
+	dialog.clear_filters()
+	dialog.add_filter("*.xml, *.csv", "Programa (Project XML, CSV)")
+	dialog.add_filter("*.xml", "Microsoft Project XML")
+	dialog.add_filter("*.csv", "CSV")
+	dialog.current_path = _schedule_file_path("xml")
+	_exchange_dialog_mode = "import"
 	dialog.popup_centered_ratio()
 
-func _on_csv_dialog_file_selected(path: String) -> void:
-	if _csv_dialog_mode == "export":
-		_export_schedule_csv(path)
-	elif _csv_dialog_mode == "import":
-		_import_schedule_csv(path)
-	_csv_dialog_mode = ""
+func _on_export_pressed() -> void:
+	var dialog := _ensure_exchange_dialog()
+	dialog.file_mode = EditorFileDialog.FILE_MODE_SAVE_FILE
+	dialog.clear_filters()
+	dialog.add_filter("*.xml", "Microsoft Project XML")
+	dialog.add_filter("*.csv", "CSV (Excel)")
+	dialog.current_path = _schedule_file_path("xml")
+	_exchange_dialog_mode = "export"
+	dialog.popup_centered_ratio()
+
+## By extension: .csv is CSV, anything else Project XML (a save path with no
+## extension gets ".xml").
+func _on_exchange_file_selected(path: String) -> void:
+	var csv := path.get_extension().to_lower() == "csv"
+	if _exchange_dialog_mode == "export":
+		if not csv and path.get_extension().to_lower() != "xml":
+			path += ".xml"
+		if csv:
+			_export_schedule_csv(path)
+		else:
+			_export_project_xml(path)
+	elif _exchange_dialog_mode == "import":
+		if csv:
+			_import_schedule_csv(path)
+		else:
+			_import_project_xml(path)
+	_exchange_dialog_mode = ""
 
 func _export_schedule_csv(path: String) -> void:
 	if not _sequence_manager:
@@ -966,15 +1081,13 @@ func _import_schedule_csv(path: String) -> void:
 	_refresh_formwork_bar()
 	_refresh_pour_bar()
 	_inspector.build(_sequence_manager, _current_schedule)
-	_set_schedule_dirty(true)
+	_on_schedule_edited()
 	print("Timeline dock: imported %d action(s) from CSV (%d skipped, no match)" % [result.updated, result.skipped])
 
-# --- Project XML Export/Import -----------------------------------------
+# --- Project XML matching -------------------------------------------------
 #
-# Same split as CSV above: the dialog(s) live here, the actual read/write
-# logic is in ScheduleProjectXmlIO (_project_xml_io). Import additionally
-# needs a matching step this file owns (not ScheduleProjectXmlIO) -- see
-# that class's header comment for why matching a foreign Project file's
+# Import needs a matching step this file owns (not ScheduleProjectXmlIO) --
+# see that class's header comment for why matching a foreign Project file's
 # tasks to our action ids is inherently a UI concern.
 #
 # Matching, in priority order, per task: (1) the persisted mapping file
@@ -987,52 +1100,12 @@ func _import_schedule_csv(path: String) -> void:
 # anchor/terminal design itself (why only the anchor's fields are written,
 # and why a terminal mismatch is reported rather than silently corrected).
 
-func _ensure_project_xml_dialog() -> EditorFileDialog:
-	if _project_xml_dialog:
-		return _project_xml_dialog
-	_project_xml_dialog = EditorFileDialog.new()
-	_project_xml_dialog.add_filter("*.xml", "Project XML Files")
-	_project_xml_dialog.access = EditorFileDialog.ACCESS_FILESYSTEM
-	_project_xml_dialog.file_selected.connect(_on_project_xml_dialog_file_selected)
-	add_child(_project_xml_dialog)
-	return _project_xml_dialog
-
-func _default_project_xml_path() -> String:
-	if not _sequence_manager:
-		return "res://schedule.xml"
-	var json_path: String = _sequence_manager.construction_json_path
-	return json_path.get_basename() + ".xml"
-
 ## Where the task-name -> {anchor_id, terminal_id} mapping persists across
 ## imports (see ScheduleProjectXmlIO.load_mapping()/save_mapping()) --
 ## silent, automatic, no file dialog of its own; this is bookkeeping the
 ## user should never have to think about, not another artifact to manage.
 func _default_project_mapping_path() -> String:
-	if not _sequence_manager:
-		return "res://schedule.project_mapping.json"
-	var json_path: String = _sequence_manager.construction_json_path
-	return json_path.get_basename() + ".project_mapping.json"
-
-func _on_export_project_xml_pressed() -> void:
-	var dialog := _ensure_project_xml_dialog()
-	dialog.file_mode = EditorFileDialog.FILE_MODE_SAVE_FILE
-	dialog.current_path = _default_project_xml_path()
-	_project_xml_dialog_mode = "export"
-	dialog.popup_centered_ratio()
-
-func _on_import_project_xml_pressed() -> void:
-	var dialog := _ensure_project_xml_dialog()
-	dialog.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILE
-	dialog.current_path = _default_project_xml_path()
-	_project_xml_dialog_mode = "import"
-	dialog.popup_centered_ratio()
-
-func _on_project_xml_dialog_file_selected(path: String) -> void:
-	if _project_xml_dialog_mode == "export":
-		_export_project_xml(path)
-	elif _project_xml_dialog_mode == "import":
-		_import_project_xml(path)
-	_project_xml_dialog_mode = ""
+	return _schedule_file_path("project_mapping.json")
 
 func _export_project_xml(path: String) -> void:
 	if not _sequence_manager:
@@ -1128,12 +1201,8 @@ func _import_project_xml(path: String) -> void:
 ## A mismatch check needs an up-to-date ConstructionSchedule (the terminal's
 ## finish is *computed*, cascading through whatever depends_on/lag_days
 ## chain sits between anchor and terminal -- it's not a field this function
-## writes anywhere), so this forces a real _rebuild_schedule() whenever at
-## least one matched entry has anchor_id != terminal_id, rather than just
-## marking the schedule dirty and waiting for an explicit Recalculate like
-## every other field edit in this dock. Skipped entirely when every matched
-## task is the ordinary single-action case (anchor_id == terminal_id),
-## preserving the usual "edits are cheap, Recalculate is explicit" behavior.
+## writes anywhere), so this rebuilds at once whenever at least one matched
+## entry has anchor_id != terminal_id, instead of after the usual pause.
 func _apply_project_xml_import(tasks: Array, matched: Dictionary) -> void:
 	var actions_by_id: Dictionary = _actions_by_id()
 	var uid_to_action_id: Dictionary = {}
@@ -1172,7 +1241,9 @@ func _apply_project_xml_import(tasks: Array, matched: Dictionary) -> void:
 	_refresh_formwork_bar()
 	_refresh_pour_bar()
 	_inspector.build(_sequence_manager, _current_schedule)
-	_set_schedule_dirty(needs_finish_check.is_empty())
+	_on_schedule_edited()
+	if not needs_finish_check.is_empty():
+		_rebuild_timer.stop() # just rebuilt above
 
 	var mapping_path: String = _default_project_mapping_path()
 	var persisted: Dictionary = _project_xml_io.load_mapping(mapping_path)

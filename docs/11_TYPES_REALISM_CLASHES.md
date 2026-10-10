@@ -118,7 +118,7 @@ problem by default.
   schedule, whatever it came from (CSV, Project XML, an older JSON). Overwrites the rows it
   recognises, including hand-picked types — it is an explicit button — and leaves unrecognised
   rows alone. Each change is printed (`C04_Limpeza: fade_out/one by one -> fill_up/together
-  ("formig")`). Dirty until Recalculate, lost without Save to JSON, like any inspector edit.
+  ("formig")`). Shown after the next rebuild, lost without Save to JSON, like any inspector edit.
 
 ### Measured
 

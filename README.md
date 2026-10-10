@@ -58,44 +58,43 @@ builds itself in ten days. / Para comprobar la instalación, abre `examples/demo
 
 ## Quick start / Inicio rápido
 
-Create a 3D scene, add a **Node3D** with `runtime/sequence_manager.gd` attached, and save. In the
-dock press **Load IFC (4D)**, pick your `.ifc`, and in **Map IFC Properties** choose which property
-is the element code, the start date and the end date or duration. If the model is georeferenced,
-the terrain downloads by itself. Press **Generate 4D Schedule**, then **Start Preview** and drag
-the slider. Press **F5** to play it. No camera, sky or light is needed: if the scene has none, one
-is added for the run.
+Create a 3D scene and save it. In the dock press **Load IFC (4D)**, pick your `.ifc`, and in
+**Map IFC Properties** choose which property is the element code, the start date and the end date
+or duration. The import creates the `SequenceManager` and writes the schedule; if the model is
+georeferenced, the terrain downloads by itself. Press **Start Preview** and drag the slider, then
+**F5** to play it. No camera, sky or light is needed: if the scene has none, one is added for the
+run.
 
-Crea una escena 3D, añade un **Node3D** con `runtime/sequence_manager.gd` y guarda. En el panel
-pulsa **Load IFC (4D)**, elige tu `.ifc` y en **Map IFC Properties** indica qué propiedad es el
-código del elemento, la fecha de inicio y la fecha de fin o la duración. Si el modelo está
-georreferenciado, el terreno se descarga solo. Pulsa **Generate 4D Schedule**, después
-**Start Preview** y arrastra el deslizador. Pulsa **F5** para reproducirlo. No hace falta cámara,
-cielo ni luz: si la escena no los tiene, se añaden para esa ejecución.
+Crea una escena 3D y guárdala. En el panel pulsa **Load IFC (4D)**, elige tu `.ifc` y en
+**Map IFC Properties** indica qué propiedad es el código del elemento, la fecha de inicio y la
+fecha de fin o la duración. La importación crea el `SequenceManager` y escribe la planificación; si
+el modelo está georreferenciado, el terreno se descarga solo. Pulsa **Start Preview** y arrastra
+el deslizador, y después **F5** para reproducirlo. No hace falta cámara, cielo ni luz: si la escena
+no los tiene, se añaden para esa ejecución.
 
-**Dates in Microsoft Project?** After **Generate 4D Schedule**, press **Start Preview**, then
-**Import Project XML** (task names must be the element codes), **Recalculate** and
-**Save to JSON**. **Already have a `construction_steps.json`?** Put it in the project before
-loading the IFC and skip **Generate 4D Schedule**.
+**Dates in Microsoft Project?** After the import, press **Importar…** and pick the `.xml` (task
+names must be the element codes), then **Save to JSON**. **Already have a
+`construction_steps.json`?** Put it in the project before loading the IFC: the import keeps it and
+only adds activities it lacks.
 
-**¿Las fechas están en Microsoft Project?** Después de **Generate 4D Schedule**, pulsa
-**Start Preview**, luego **Import Project XML** (los nombres de las tareas deben ser los códigos de
-los elementos), **Recalculate** y **Save to JSON**. **¿Ya tienes un `construction_steps.json`?**
-Ponlo en el proyecto antes de cargar el IFC y no pulses **Generate 4D Schedule**.
+**¿Las fechas están en Microsoft Project?** Después de importar, pulsa **Importar…** y elige el
+`.xml` (los nombres de las tareas deben ser los códigos de los elementos), y luego
+**Save to JSON**. **¿Ya tienes un `construction_steps.json`?** Ponlo en el proyecto antes de cargar
+el IFC: la importación lo conserva y solo añade las actividades que le faltan.
 
 ## Terrain / Terreno
 
-The dock's **Terreno** section downloads the ground around the model, places it, and can add a
-sun that follows the schedule's date (**Añadir sol**). For a building, **Nivelar desde el modelo**
-levels a pad and digs the excavation on the dates of the earthworks; for a bridge, leave the
-ground natural. A model with no georeference takes a latitude and longitude typed into the dock.
-Details in the guide and in [docs/10_TERRAIN.md](docs/10_TERRAIN.md).
+The dock's **Terreno** section downloads the ground around the model and places it. After an
+import it also, by itself, levels a pad and digs the excavation on the dates of the earthworks
+(**Nivelar para edificio**; untick it for a bridge) and adds a sun that follows the schedule's date
+when the scene has no light. A model with no georeference takes a latitude and longitude typed into
+the dock. Details in the guide and in [docs/10_TERRAIN.md](docs/10_TERRAIN.md).
 
-La sección **Terreno** del panel descarga el terreno alrededor del modelo, lo coloca y puede
-añadir un sol que sigue la fecha de la planificación (**Añadir sol**). Para un edificio,
-**Nivelar desde el modelo** explana una plataforma y excava el vaciado en las fechas del
-movimiento de tierras; para un puente, deja el terreno natural. Un modelo sin georreferencia
-acepta una latitud y longitud escritas en el panel. Detalles en la guía y en
-[docs/10_TERRAIN.md](docs/10_TERRAIN.md).
+La sección **Terreno** del panel descarga el terreno alrededor del modelo y lo coloca. Tras una
+importación, además, explana una plataforma y excava el vaciado en las fechas del movimiento de
+tierras (**Nivelar para edificio**; desmárcalo para un puente) y añade un sol que sigue la fecha de
+la planificación si la escena no tiene luz. Un modelo sin georreferencia acepta una latitud y
+longitud escritas en el panel. Detalles en la guía y en [docs/10_TERRAIN.md](docs/10_TERRAIN.md).
 
 The terrain data must be credited wherever it is shown: *© Instituto Geográfico Nacional de España
 — PNOA / MDT05, CC BY 4.0 (scne.es)* for Spain; the source list shown in the dock elsewhere. Videos

@@ -6,10 +6,11 @@ docs in this folder; `README.md` is the as-built reference.
 ## 0.7.0
 
 Animation types read from activity names, animations that look like construction, clash
-detection that ignores designed contact, and site equipment — a tower crane, a mobile crane, an
+detection that ignores designed contact, site equipment — a tower crane, a mobile crane, an
 excavator built to Caterpillar's published 320 measurements and a truck — that comes and goes with
-the schedule. Tested with Godot 4.6.2 and 4.7.2: 510 checks in nine headless suites, plus the
-site equipment run end to end on the test project's real, levelled terrain.
+the schedule, and a much simpler dock. Tested with Godot 4.6.2 and 4.7.2: 517 checks in nine
+headless suites, plus the site equipment run end to end on the test project's real, levelled
+terrain.
 
 **Upgrading from 0.6.0.**
 - **Machines appear on Play.** `SequenceManager.auto_equipment` is on by default, so a scene with
@@ -19,6 +20,66 @@ site equipment run end to end on the test project's real, levelled terrain.
   re-reads them from the activity names when you want it to.
 - **The guides gained a section.** *Site equipment* / *Maquinaria de obra* is section 10; *Play*,
   *Record a video* and *Troubleshooting* moved to 11–13.
+- **Load IFC (4D) now writes the schedule.** With no `construction_steps.json` it generates it;
+  with one, it only adds actions for activities none of yours covers, and changes nothing else.
+  **Generate 4D Schedule** and **Edit IFC mapping** moved to the **▾** next to it.
+- **No Recalculate.** Edits show in the preview a moment after you make them.
+- **No Reload from JSON.** Stop Preview with unsaved edits asks *Guardar / Descartar / Cancelar*.
+- **No Scan Collisions** on the timeline bar: the scan runs by itself.
+- **Fewer terrain buttons** (see "A simpler dock"); the levelling's slope and margin are on the
+  Terrain node.
+
+### A simpler dock
+
+What always happens in sequence is one step, what the tool can do itself is not a button, and
+what only applies while previewing is hidden until then: with the preview off the dock shows four
+buttons, down from 26. Driven in the real editor on the test project (import, terrain, preview,
+edit, import/export, stop with unsaved edits).
+
+#### Dock (`editor/timeline_dock.gd`, `editor/timeline_dock.tscn`)
+- **Start Preview / Stop Preview are one toggle.** Stopping with edits not yet saved asks
+  *Guardar / Descartar / Cancelar* — the button, **Maquinaria**, **Load IFC (4D)** and **Generate 4D
+  Schedule** all go through the question (`_stop_then()`). Switching scene tabs stops at once and
+  then offers to save the edits to that scene's file.
+- **Edits rebuild the preview by themselves**, 0.4 s after the last one (a one-shot timer), instead
+  of the *Recalculate* button and its "out of date" label. Affordable because a schedule with no
+  `install` actions no longer builds collision shapes (below).
+- **Save to JSON** is greyed out when there is nothing to save. *Reload from JSON* is gone.
+- **Importar… / Exportar…** replace the four CSV / Project XML buttons; the format is the file's
+  extension. **Importar…** is in the top row and starts the preview itself, so a Project XML
+  import is *Load IFC → Importar… → Save*.
+- **Load IFC (4D) writes the schedule** (`_schedule_after_import()`): the full generation when
+  there is no JSON, otherwise `IFCScheduleGenerator.add_new_actions()` — a second model of the site
+  (e.g. `galicia_medios_auxiliares.ifc`) adds its activities without a regeneration, which would
+  have re-read every date and dropped formwork. Runs before the terrain, so levelling sees the
+  earthworks. **Generate 4D Schedule** and **Edit IFC mapping** are in a **▾** menu.
+- **Hidden until the preview**: the timeline, the inspector and its buttons, *Vertido* and
+  *Encofrado en todo el proyecto*. Vertido's six tuning fields fold under *▸ Ajustes*.
+
+#### Terreno (`editor/terrain_panel.gd`)
+- **Removed**: *Deducir huso* (a download deduces the zone), *Comprobar posición* (the check is
+  printed after every download, Aplicar origen and Asentar), *Añadir sol* (a `GeoSun` is added when
+  the terrain is built and the scene has no directional light), *Quitar terreno* (delete the node).
+- ***Nivelar desde el modelo* / *Terreno natural* → one checkbox, *Nivelar para edificio***, ticked
+  by itself on the first terrain built for a schedule with earthworks. *Talud H:V* and *Margen m*
+  became `ConstructionTerrain.level_slope` / `level_margin` in the Inspector.
+- **Aplicar origen fetches the terrain** for the new place (or lets the existing one follow when
+  it already covers it).
+- **Folded**: the manual origin fields when the model is georeferenced (*▸ Cambiar origen*); size,
+  *Al importar IFC*, *Texturas cercanas*, *Archivos propios…* and *Asentar en el suelo* under
+  *▸ Más opciones*. *Cancelar* only shows during a download, in place of *Descargar terreno*.
+
+#### Runtime and core
+- `TimelineUI`: the *Scan Collisions* button is gone; the scan runs once per wiring
+  (`set_timeline_controller()` resets `_auto_scanned`), so it also follows every dock rebuild.
+- `ConstructionSchedule` calls `CollisionQuery.setup()` only when `has_install_parts()`: without
+  an install mover nothing can clash, and the shapes were most of a rebuild's cost.
+- `IFCScheduleGenerator.add_new_actions()` (+7 checks in `tests/test_ifc_mapping.gd`).
+
+#### Docs
+- Both guides: a "short version" at the top; sections 5–9, 11 and 13 follow the new dock.
+  `docs/README.md` ("The editor dock", "Collision detection"), `10_TERRAIN.md` (new "The dock"),
+  `05_IFC_INTEGRATION.md`, `04_API_REFERENCE.md`, the root README.
 
 ### Site equipment
 

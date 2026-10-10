@@ -64,6 +64,18 @@ extends Node3D
 				p.changed.connect(_queue_rebuild)
 		_queue_rebuild()
 
+@export_group("Levelling from the model")
+## Bank slope of the pad the dock's "Nivelar para edificio" makes: metres of
+## horizontal run per metre of height (1.5 is a usual earth slope; the pit uses
+## at most 0.5). Read when the levelling is (re)made: untick and tick the box
+## to apply a change. Each made platform also has its own slope.
+@export_range(0.0, 10.0, 0.1) var level_slope: float = 1.5
+## Extra room around the model's plan extent for that pad, metres. The terrain
+## grid already levels up to one cell diagonal beyond it, so 0 usually leaves a
+## working apron.
+@export_range(0.0, 100.0, 0.5) var level_margin: float = 0.0
+@export_group("")
+
 ## Every ConstructionTerrain joins this group, so the timeline can find them.
 const GROUP := "construction_terrain"
 

@@ -7,6 +7,11 @@ terrain, and a video of it being built. Follow the sections in order the first t
 button name below is written exactly as it appears on screen: the dock mixes English and
 Spanish labels.
 
+**The short version**, for a georeferenced IFC whose elements carry their dates: **Load IFC
+(4D)** (answer the property window once) → **Start Preview** to check it → save the scene → **F5**.
+The import writes the schedule and brings in the terrain, levelled for the building, and the sun;
+Play adds the machines. The rest of this guide is for when you want more.
+
 Contents: [1. What you need](#1-what-you-need) · [2. Install](#2-install) ·
 [3. Try the demo](#3-try-the-demo) · [4. Prepare your scene](#4-prepare-your-scene) ·
 [5. Import your model](#5-import-your-model-ifc) · [6. Get a schedule](#6-get-a-schedule) ·
@@ -83,14 +88,17 @@ sky and a sun for that run. You can add your own later ([section 12](#12-record-
    | **Fallback type** | The animation for activities nothing above decides. | — |
 
    **OK** stays greyed out until the required fields are chosen. Press **OK**.
-3. The elements appear under `SequenceManager` (e.g. `IFCParts_mymodel`). Your answers are saved
-   next to the schedule (`construction_steps.ifc_profile.json`). Importing the same kind of model
-   again reuses them without asking; to change them, press **Edit IFC mapping**.
+3. The elements appear under `SequenceManager` (e.g. `IFCParts_mymodel`), and the schedule is
+   written at the same time (`construction_steps.json`, see [section 6](#6-get-a-schedule)).
+   Your answers are saved next to it (`construction_steps.ifc_profile.json`). Importing the same
+   kind of model again reuses them without asking; to change them, open the **▾** next to
+   **Load IFC (4D)** → **Edit IFC mapping**.
 4. If the IFC is georeferenced, the terrain starts downloading by itself; see
    [section 7](#7-terrain-and-the-site).
 5. Several IFC files of the same site (e.g. structure and landscaping, or two carriageways) can
    go in one scene: press **Load IFC (4D)** again for each. Each is placed next to the first by
-   its georeference.
+   its georeference, and its activities are added to the schedule (nothing already in it
+   changes).
 
 The animation types are: `fill_up` (concrete pour, fills from the bottom), `build_up` (built up
 from its own base, e.g. masonry, scaffolding), `drop_in` (lowered onto its place from a few
@@ -111,18 +119,22 @@ Pick the case that matches what you have.
 
 ### A. Only the IFC (dates are in the model)
 
-Press **Generate 4D Schedule**. It writes `construction_steps.json` with one action per Element
-ID. Elements with no dates (existing ground, for instance) stay visible from day 0.
+Nothing to do: **Load IFC (4D)** writes `construction_steps.json`, one action per Element ID.
+Elements with no dates (existing ground, for instance) stay visible from day 0.
+
+If you later change the mapping or the dates in the model, **▾** → **Generate 4D Schedule**
+rewrites the schedule from the IFC. It keeps the types you corrected, but takes every date from
+the IFC again (dates imported from Project are lost) and drops formwork, so use it only then.
 
 ### B. The IFC plus a Microsoft Project plan (XML)
 
-1. Press **Generate 4D Schedule** first. The XML import updates actions; it does not create them.
-2. Press **Start Preview**. The import buttons only work during a preview.
-3. Press **Import Project XML** and pick the `.xml`. Each task is matched to an action by its
-   **name**, so the task names in Project must be the element codes (e.g. `C04_Limpeza`). Summary
-   tasks are ignored. If some tasks don't match, a window asks you which action each one is.
-4. Press **Recalculate**, then **Save to JSON**. Without **Save to JSON**, the imported dates are
-   lost when you stop the preview.
+1. **Load IFC (4D)** as above: it writes the schedule. The XML import updates actions; it does
+   not create them.
+2. Press **Importar…** and pick the `.xml` (the preview starts by itself). Each task is matched to
+   an action by its **name**, so the task names in Project must be the element codes (e.g.
+   `C04_Limpeza`). Summary tasks are ignored. If some tasks don't match, a window asks you which
+   action each one is.
+3. Press **Save to JSON** (or **Stop Preview** and answer **Guardar**).
 
 The import brings in the dates and the links between tasks (predecessors and lags). It also sets
 each action's animation type when the plan has a custom text column (e.g. *Text2*, named *Tipo de
@@ -133,9 +145,10 @@ their tasks in Project and import again.
 ### C. You already have a `construction_steps.json`
 
 Copy `construction_steps.json` (and `construction_steps.ifc_profile.json` if you have it) into
-the project root **before** loading the IFC, and **do not** press **Generate 4D Schedule**: it
-would replace your schedule. With the profile present, **Load IFC (4D)** doesn't even ask for the
-mapping.
+the project root **before** loading the IFC. **Load IFC (4D)** keeps your schedule: it only adds
+actions for activities of the model that none of yours covers. Don't use **▾** → **Generate 4D
+Schedule**: it would replace it. With the profile present, **Load IFC (4D)** doesn't even ask for
+the mapping.
 
 ## 7. Terrain and the site
 
@@ -143,32 +156,39 @@ Everything here is in the **Terreno** section of the dock.
 
 **Automatic.** When the IFC carries its position on Earth, the terrain downloads right after the
 import: elevation and aerial photos (mainland Spain and the Balearics: 5 m and 25 cm; elsewhere
-elevation only). It takes a few seconds to a minute and is cached in `res://terrain/`.
+elevation only). It takes a few seconds to a minute and is cached in `res://terrain/`. Then, by
+itself: a model with no known height is set on the ground; the ground is **levelled for the
+building** when the schedule has earthworks (below); a **sun** that follows the schedule's date
+(GeoSun) is added if the scene has no light of its own. The status line says whether the model
+floats or is buried.
 
-**If the model is not georeferenced**, type the centre of the model as **Lat, lon** (e.g. copied
-from a web map), leave **Altura** empty if you don't know the height, turn the model with
-**Giro °** if needed, press **Aplicar origen**, then **Descargar terreno**. Without a height the
-model is placed on the ground automatically.
+**If the model is not georeferenced**, the dock shows the origin fields: type the centre of the
+model as **Lat, lon** (e.g. copied from a web map), leave **Altura** empty if you don't know the
+height, turn the model with **Giro °** if needed, and press **Aplicar origen**: the terrain
+downloads. Without a height the model is placed on the ground. For a georeferenced model the same
+fields are under **▸ Cambiar origen**, to correct a wrong position.
 
 | Control | Use |
 |---|---|
-| Size list | **Reducido (2 km)**, **Estándar (4,2 km)**, **Amplio (8 km)** of terrain around the model |
-| **Al importar IFC** | Download automatically after an import (on by default) |
-| **Texturas cercanas** | Detailed ground textures close to the camera (~15 MB, once) |
-| **Descargar terreno** | Download / rebuild now |
-| **Archivos propios…** | Use your own `.asc` elevation and JPG/PNG photos with world files instead |
-| **Comprobar posición** | Report whether the model floats or is buried |
-| **Asentar en el suelo** | Lower or raise the model until it just touches the ground |
-| **Añadir sol** | A sun that follows the schedule's date |
-| **Quitar terreno** | Remove the terrain (downloaded files stay) |
+| **Descargar terreno** | Download / rebuild now (**Cancelar** takes its place while downloading) |
+| **Nivelar para edificio** | Levelled ground for the building (below); untick for the natural ground |
+| **▸ Más opciones** → size list | **Reducido (2 km)**, **Estándar (4,2 km)**, **Amplio (8 km)** of terrain around the model |
+| **▸ Más opciones** → **Al importar IFC** | Download automatically after an import (on by default) |
+| **▸ Más opciones** → **Texturas cercanas** | Detailed ground textures close to the camera (~15 MB, once) |
+| **▸ Más opciones** → **Archivos propios…** | Use your own `.asc` elevation and JPG/PNG photos with world files instead |
+| **▸ Más opciones** → **Asentar en el suelo** | Lower or raise the model until it just touches the ground |
+
+To remove the terrain, delete the **Terrain** node in the Scene panel (the downloaded files stay).
 
 **Levelling for a building.** Natural ground is right for a bridge; a building sits on levelled
-ground. Press **Nivelar desde el modelo**: it creates a platform under the model and an
-excavation down to the footings, and ties them to the earthworks activities in your schedule
-(topsoil stripping, excavation...), so the ground changes on those dates. **Talud H:V** sets the
-bank slope (1.5 = 1.5 m across per 1 m of height); **Margen m** adds room around the model. To
-adjust, select the **Terrain** node and open **Platforms** in the Inspector (outline, level,
-slope, activities). **Terreno natural** removes all levelling.
+ground. **Nivelar para edificio** creates a platform under the model and an excavation down to the
+footings, and ties them to the earthworks activities in your schedule (topsoil stripping,
+excavation...), so the ground changes on those dates. It is ticked by itself the first time the
+terrain is built for a schedule that has earthworks; untick it for the natural ground. To adjust,
+select the **Terrain** node: **Platforms** in the Inspector holds each one (outline, level,
+slope, activities), and **Levelling from the model** holds **Level Slope** (bank slope, 1.5 =
+1.5 m across per 1 m of height) and **Level Margin** (room around the model) — untick and tick
+**Nivelar para edificio** again to apply those two.
 
 **Credit.** Terrain data must be credited wherever it is shown. The credit appears in the dock,
 and videos recorded with the tool include it automatically. For Spain: *© Instituto Geográfico
@@ -176,21 +196,24 @@ Nacional de España — PNOA / MDT05, CC BY 4.0 (scne.es)*.
 
 ## 8. Preview and edit the schedule in the editor
 
-1. Press **Start Preview**. A timeline appears in the dock: drag its slider and the 3D view
-   shows the building on that date. **Do not save the scene while the preview is on.**
-2. The **Schedule Inspector** below lists every action. **Auto types** sets every row's **Tipo**
-   and cadence from the activity's name, as the import does (useful for a schedule that came from
-   CSV, Project XML or an older version); the Output panel lists every change, and rows whose name
-   it doesn't recognise are left alone. Its column headers are in Spanish (hover one for the
-   English name). Per row you can change **Tipo** (animation), **Fecha Inicio**,
-   **Duración (días)**, **Fecha Fin**, **Unidades/Día**, **Encofrado** and **Días vertido**
-   (section 9), **Depende De** (the action it waits for) and **Retraso (días)**, and remove the row
-   (**✕**). **Ancla** decides which of start / duration / end stays fixed when you edit the others.
-3. After editing, press **Recalculate** to see the result, and **Save to JSON** to keep it.
-   **Reload from JSON** discards unsaved edits.
-4. **Export CSV / Import CSV** and **Export Project XML / Import Project XML** exchange the
-   schedule with Excel or Microsoft Project.
-5. Press **Stop Preview** when done. Every element returns to how the scene was saved. Then save.
+1. Press **Start Preview** (the same button then reads **Stop Preview**). A timeline appears in
+   the dock: drag its slider and the 3D view shows the building on that date. The schedule tools
+   below only appear while the preview is on. **Do not save the scene while the preview is on.**
+2. The **Schedule Inspector** lists every action. Per row you can change **Tipo** (animation),
+   **Fecha Inicio**, **Duración (días)**, **Fecha Fin**, **Unidades/Día**, **Encofrado** and
+   **Días vertido** (section 9), **Depende De** (the action it waits for) and **Retraso (días)**,
+   and remove the row (**✕**). **Ancla** decides which of start / duration / end stays fixed when
+   you edit the others. Its column headers are in Spanish (hover one for the English name). Each
+   edit shows in the 3D view a moment later.
+3. **Save to JSON** keeps your edits (it is greyed out when there is nothing new to save).
+4. **Exportar…** writes the schedule for Microsoft Project (`.xml`) or Excel (`.csv`): pick the
+   type in the file window. **Importar…** reads either back.
+5. **Auto types** sets every row's **Tipo** and cadence from the activity's name, as the import
+   does (useful for a schedule that came from CSV, Project XML or an older version); the Output
+   panel lists every change, and rows whose name it doesn't recognise are left alone.
+6. Press **Stop Preview** when done. With edits not yet saved it asks: **Guardar** saves them,
+   **Descartar** throws them away, **Cancelar** keeps previewing. Every element returns to how the
+   scene was saved. Then save the scene.
 
 ## 9. Formwork and scaffolding
 
@@ -210,9 +233,11 @@ scaffolding that is put up and struck must be set up here.
      The scaffolding goes up during the first part of that action, the action's own elements go
      in during its last `pour_days` days, and the scaffolding comes down `strip_days` days after
      the action ends.
-  3. Back in the dock, press **Reload from JSON**.
+  3. Back in the dock, press **Stop Preview** and **Start Preview** again: the preview reads the
+     file afresh.
 
-Regenerating the schedule from the IFC later keeps the types you corrected, but not formwork.
+**▾** → **Generate 4D Schedule** later keeps the types you corrected, but not formwork. Loading
+another IFC doesn't touch it.
 
 This set-up is a stopgap: scaffolding borrows the concrete-formwork mechanism, serves one
 activity only, needs the JSON edit above and is lost on regeneration. A proper rework is planned
@@ -232,7 +257,7 @@ names like the animation types (**Auto types**, section 8): "Excavación" brings
   proposed positions: move or turn a marker and the machine follows. Select **SiteEquipment** to
   change **Tower Height** (ground to the jib) and **Jib Length** (0 = automatic), **Erect Days**, or
   switch a machine off. Save the scene to keep it. Pressing **Maquinaria** again proposes fresh
-  positions (and stops the preview).
+  positions (it stops the preview first, asking about unsaved edits).
 - **The mobile crane** is set up beside each lift's pieces, so it has no marker.
 - **Your own crane**: if the scene already has one, no tower crane is added.
 - **The excavator is to scale**: a Caterpillar 320 built to the manufacturer's published
@@ -247,9 +272,11 @@ Press **F5** (the first time, answer **Select Current** to make your scene the m
 **F6** for the open scene.
 
 - **Bar at the top**: **Play / Pause**, the slider (drag to any date), the speed box (schedule
-  days per second, 0.1 to 5), **Reset** (back to the first day), **Scan Collisions** (only
-  relevant for crane lifts, `install`). A lifted piece clashes when it passes through something
-  already built on its way in. Touching or overlapping what it sits on or against *in the finished
+  days per second, 0.1 to 5), **Reset** (back to the first day).
+- **Clashes** (only for crane lifts, `install`) are looked for by themselves when Play starts: the
+  dates with one turn red on the slider (hover for the pair), the Output panel lists them, and Play
+  stops at each. A lifted piece clashes when it passes through something already built on its way
+  in. Touching or overlapping what it sits on or against *in the finished
   model* is not a clash, and neither is grazing within 2 cm. Pieces of one activity are placed
   bottom-up, so a clash that remains usually means the activity is scheduled after what is above
   it (e.g. window surrounds still going in after the cornice above them).
@@ -296,13 +323,14 @@ Size**) is the video size; 1920 × 1080 is standard.
 | The dock says **No SequenceManager found in the open scene** | Normal before the first import: **Load IFC (4D)** creates it. Without an IFC, add it by hand as in [section 4](#4-prepare-your-scene). |
 | **Load IFC (4D)** does nothing; the Output panel says GDIFC is not installed | Enable **GDIFC** in Project Settings → Plugins and restart the editor. |
 | **OK** is greyed out in **Map IFC Properties** | Choose Element ID, Start date, and End date or Duration. |
-| The mapping window no longer appears | The saved answers are reused. Use **Edit IFC mapping** to change them. |
-| Nothing is visible when playing | Press **Generate 4D Schedule** (or bring a schedule, section 6). Parts with no schedule stay hidden. |
-| **Import Project XML** is greyed out | Press **Start Preview** first. |
-| Imported dates disappeared | Press **Save to JSON** before **Stop Preview**. |
+| The mapping window no longer appears | The saved answers are reused. Use **▾** → **Edit IFC mapping** to change them. |
+| Nothing is visible when playing | Parts with no action in the schedule stay hidden. Check the Output panel after **Load IFC (4D)**; if the schedule could not be written, use **▾** → **Generate 4D Schedule**. |
+| I can't find the Schedule Inspector, **Save to JSON** or **Encofrado** | They show only while the preview is on: press **Start Preview**. |
+| **Importar…** / **Start Preview** are greyed out | There is no SequenceManager yet: **Load IFC (4D)** first. |
+| Imported dates disappeared | They were not saved: answer **Guardar** when stopping the preview, or press **Save to JSON**. |
 | A window asks to map Project tasks | Those task names are not element codes. Pick the action for each, or rename the tasks in Project. |
 | The terrain download fails | The Spanish servers fail now and then; the tool tries four times. Press **Descargar terreno** again later. |
-| The model floats or is buried | **Comprobar posición**, then **Asentar en el suelo**, or type the right **Altura** and **Aplicar origen**. |
+| The model floats or is buried | The status line after the download says so. **▸ Más opciones** → **Asentar en el suelo**, or **▸ Cambiar origen**, type the right **Altura** and **Aplicar origen**. |
 | Accents look wrong (`FormigÃ³n`) in an old scene | Re-import the IFC; the tool now repairs them. |
 | Scaffolding never comes down | See [section 9](#9-formwork-and-scaffolding). |
 | Thousands of images appear in the project after recording | The movie file was inside the project. Move it outside and delete the images. |

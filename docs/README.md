@@ -7,7 +7,7 @@ This file describes **what the addon does today and why it is built that way**, 
 subsystem. It is the source of truth when it disagrees with the older planning documents. Exact
 signatures are in `04_API_REFERENCE.md`; the history of every change is in `CHANGELOG.md`.
 
-**Version 0.7.0.** Tested with Godot 4.6.2 and 4.7.2 (510 checks in nine headless suites, see
+**Version 0.7.0.** Tested with Godot 4.6.2 and 4.7.2 (517 checks in nine headless suites, see
 "Verifying changes" at the end).
 
 ## The documents
@@ -58,7 +58,8 @@ the site's plant at work, and as a recorded video.
    schedule and mounts the timeline UI; a scene without a camera, sky or sun gets default ones
    for the run, and a scene without site equipment gets it automatically.
 3. Use the bar at the top: drag the **slider** to scrub, **Play/Pause**, the **speed** box
-   (schedule days per real second, 0.1–5, default 1), **Reset**, **Scan Collisions**.
+   (schedule days per real second, 0.1–5, default 1), **Reset**. Clashes are scanned for by
+   themselves (see "Collision detection").
 4. Click in the view to fly (WASD, mouse, Q/E down/up, Shift faster); Escape releases the mouse.
 
 ## Data model
@@ -131,7 +132,7 @@ construction_steps.json ─► ConstructionSchedule ─► TimelineController.sc
 by `playback_speed × delta`; on top of that, forward Play alone fires the one-shot effects —
 a `Crane.swing()` when an `install` unit starts, the pour stream when a `fill_up` part starts
 (`_detect_install_actions()`, `_detect_fill_up_actions()`). Scrubbing never fires them.
-`TimelineUI` (slider, Play, speed, Reset, Scan Collisions, date) only talks to the controller.
+`TimelineUI` (slider, Play, speed, Reset, date) only talks to the controller.
 
 `SequenceManager` is the scene root's script. At runtime `_ready()`: adds a default camera, sky
 and sun where the scene has none (`_ensure_view()`); loads the JSON; generates formwork;
@@ -166,8 +167,8 @@ prefix that matches nothing, or a part matching both lists, is warned about (exc
 `IFCScheduleGenerator` carries both lists forward when it regenerates the schedule.
 
 In the dock, a row whose prefix matches **no** part is marked ⚠ in amber, and every row has a
-**✕** to remove the action (no confirmation: Reload from JSON is the undo; dependents of a
-removed action are listed in a warning).
+**✕** to remove the action (no confirmation: stopping the preview and answering *Descartar* is
+the undo; dependents of a removed action are listed in a warning).
 
 ## Animation types
 
@@ -189,7 +190,7 @@ activity name chooses it are in `11_TYPES_REALISM_CLASHES.md`. In short:
 
 **Types from activity names.** `TaskClassifier` reads Spanish, Galician, Portuguese and English
 construction vocabulary — *hormigonado* pours, *mampostería* builds up, *excavación* sinks — and
-gives each action a type and a `batch`. It is used by Generate 4D Schedule when the model states
+gives each action a type and a `batch`. It is used by schedule generation when the model states
 no type, and by the dock's **Auto types** button. It never picks `install`.
 
 ## Per-action cadence
@@ -289,11 +290,14 @@ What the user sees: `TimelineUI` shows a warning line with the clashing pair at 
 `CollisionVisualizer` draws a red, always-on-top box at each live clash (pooled meshes,
 `min_marker_size` 0.6 m, `size_padding` 0.3 m); forward Play **stops** on a clash
 (`collision_paused`, "Play (blocked)") — a hard gate, not a revert, so the state stays
-inspectable; and **Scan Collisions** (`TimelineController.scan_collisions()`, also run once when
-the UI starts) steps through every install window at 0.01 day, merges hits into
+inspectable; and the scan (`TimelineController.scan_collisions()`, run by `TimelineUI` once
+each time it is wired to a schedule — at start, and after every rebuild in the dock) steps
+through every install window at 0.01 day, merges hits into
 `{part1, part2, start_day, end_day}` windows, prints them and paints them red on the slider
-(`CollisionOverlay`, with a hover tooltip). A schedule with no `install` parts skips the scan
-entirely. In movie mode the gate is bypassed and the UI is not built.
+(`CollisionOverlay`, with a hover tooltip). There is no scan button: the schedule cannot change
+during Play, so a second scan could only repeat the first. A schedule with no `install` parts
+skips the scan entirely, and builds no collision shapes at all (`ConstructionSchedule` calls
+`CollisionQuery.setup()` only when `has_install_parts()`) — most of what a rebuild costs. In movie mode the gate is bypassed and the UI is not built.
 
 ## The editor dock
 
@@ -302,13 +306,37 @@ entirely. In movie mode the gate is bypassed and the UI is not built.
 run at runtime; `@tool` on those scripts is what lets them run in the editor. The dock finds the
 edited scene's `SequenceManager` by script identity.
 
+**Layout: what the work needs, in its order** (0.7.0). Steps that always follow one another are
+one control, steps the tool can take itself are not controls, and what only applies while
+previewing is hidden rather than greyed out (a dock full of disabled buttons read as clutter).
+With the preview off the dock shows one row — **Load IFC (4D)** with a **▾** menu, **Start
+Preview**, **Importar…**, **Maquinaria** — and the **Terreno** section.
+
+| Control | Does |
+|---|---|
+| **Load IFC (4D)** | Imports the model, then writes the schedule: with no JSON yet, the full generation (`IFCScheduleGenerator.generate()`); with one, only the actions of activities nothing in it covers (`add_new_actions()`), leaving every existing action alone. Then the terrain (`TerrainPanel.on_ifc_imported()`) |
+| **▾** → **Generate 4D Schedule** | The full regeneration, explicit because it re-reads every date from the IFC (losing Project XML dates) and drops formwork |
+| **▾** → **Edit IFC mapping** | The property dialog again |
+| **Start Preview** / **Stop Preview** | One toggle. Stopping with unsaved edits asks *Guardar / Descartar / Cancelar* (`_stop_then()`) |
+| **Importar…** | Project XML or CSV, by the file's extension. Starts the preview if it is off |
+| **Maquinaria** | Site equipment markers (`13_SITE_EQUIPMENT.md`); stops the preview first, through the same question |
+| Preview only: **Save to JSON**, **Exportar…**, **Auto types**, **Capturar cámara**, *Vertido*, *Encofrado en todo el proyecto*, the inspector | Below |
+
+Removed in 0.7.0, and why: *Recalculate* (edits rebuild by themselves), *Reload from JSON* (Stop →
+Descartar → Start does it, and the question on Stop protects edits instead), four separate
+CSV/XML buttons (two, by extension), *Stop Preview* as its own button, *Generate 4D Schedule* and
+*Edit IFC mapping* as buttons (in the ▾ menu), *Scan Collisions* on the timeline bar (see
+"Collision detection"), and five terrain buttons (`10_TERRAIN.md`, "The dock").
+
 **Preview, and its restore guarantee.** Start Preview snapshots every part's material overrides
 (and every `GeoSun`'s transform), runs `load_json()`, `_generate_formwork()` and
 `initialize_parts()` exactly as `_ready()` would, builds a schedule and embeds the timeline UI.
 Stop Preview — the button, switching scene tabs, or disabling the plugin — restores position,
 scale and visibility from the metas, materials from the snapshot, resets terrain and site
 equipment, sweeps generated formwork, and frees the scratch controller and UI. A warning label
-says not to save while previewing. The preview builds the schedule with **no cranes**, so
+says not to save while previewing. Switching scene tabs with unsaved edits stops the preview at
+once (the scene has already changed) and then offers to save the edits to that scene's JSON;
+disabling the plugin only warns. The preview builds the schedule with **no cranes**, so
 `install` swings and the tower crane's lifts are runtime-only; a `SiteEquipment` node in the
 scene does follow the preview's dates. There is no 3D collision marker in the dock.
 
@@ -317,10 +345,11 @@ scene does follow the preview's dates. There is no 3D collision marker in the do
 *Unidades/Día*, *Encofrado*, *Días vertido*, *Depende De*, *Retraso (días)*, ✕. Labels are
 Spanish for the crews who author schedules; every value written to the JSON stays the English
 key (each dropdown item stores it as metadata), and headers carry the English field name as a
-tooltip. Edits change `sequence_data` in place and mark the schedule **dirty** rather than
-rebuilding it: a rebuild re-creates every part's collision shapes, too slow per keystroke.
-**Recalculate** rebuilds (keeping the scrubbed day), **Save to JSON** writes the file, **Reload
-from JSON** discards edits.
+tooltip. Edits change `sequence_data` in place, mark it **unsaved** and restart a 0.4 s one-shot
+timer; when it fires the dock rebuilds the schedule (`_rebuild_schedule()`, keeping the scrubbed
+day), so five clicks on a SpinBox arrow rebuild once. Without `install` actions a rebuild builds no
+collision shapes, which is what made per-edit rebuilding affordable; it used to be an explicit
+*Recalculate* button. **Save to JSON** writes the file and is greyed out when nothing is unsaved.
 
 - **ID** edits rebuild the grid, since other rows' *Depende De* may reference it. *Acción* shows
   the resolved identity and, when an explicit id differs, the prefix too.
@@ -348,10 +377,10 @@ from JSON** discards edits.
 - **Auto types** sets every recognised row's *Tipo* and *Cadencia* from its name and prints each
   change.
 
-Other controls: **Capturar cámara** (camera keyframes), **Encofrado en todo el proyecto**
-(project-wide formwork), the **Vertido** section (pour stream), **Load IFC (4D)**, **Generate 4D
-Schedule**, **Edit IFC mapping**, **Maquinaria** (site equipment), and the **Terreno** section
-(`10_TERRAIN.md`). Buttons sit in flow containers and wrap in a narrow dock.
+Other preview controls: **Exportar…** (Project XML or CSV, by extension; a name with neither gets
+`.xml`), **Capturar cámara** (camera keyframes), **Encofrado en todo el proyecto** (project-wide
+formwork), and **Vertido** (pour stream), whose six tuning fields fold under *▸ Ajustes* since each
+has a default derived from the element. Buttons sit in flow containers and wrap in a narrow dock.
 
 ### CSV import/export
 
@@ -485,7 +514,7 @@ the JSON supplies the path or prefix. A row too short for a formwork phase shows
 in amber.
 
 **Not yet built**: carrying formwork through Generate 4D Schedule (build order step 6) — today a
-regeneration drops it. Scaffolding rides on tier 1 as a stopgap; the rework is item 1 of
+regeneration drops it. A later Load IFC does not regenerate, so it keeps formwork. Scaffolding rides on tier 1 as a stopgap; the rework is item 1 of
 `12_FUTURE_WORK.md`.
 
 ## Concrete pour stream
@@ -606,7 +635,7 @@ timeline UI never capture the mouse. `move_speed`, `vertical_speed`, `mouse_sens
 
 ## Verifying changes
 
-Nine headless suites in `tests/` (510 checks). Register class names once, then run each:
+Nine headless suites in `tests/` (517 checks). Register class names once, then run each:
 
 ```bash
 godot --headless --path . --editor --quit

@@ -27,10 +27,12 @@ in the IFC):
 - **Setting it up means editing JSON by hand.** The guide's own procedure (section 9): delete the
   scaffold's row in the inspector, save, open `construction_steps.json` in a text editor, add
   `"formwork": {"prefix": "Z99_Andamio", "pour_days": 84, "strip_days": 3}` to the action it
-  serves, then Reload from JSON. Nobody gets that right first time.
+  serves, then stop and start the preview. Nobody gets that right first time.
 - **Regenerating the schedule destroys it.** Generate 4D Schedule does not carry `formwork`
-  blocks forward (formwork build-order step 6, still open), so every re-import of the model undoes
-  the setup — silently.
+  blocks forward (formwork build-order step 6, still open), so regenerating undoes the setup —
+  silently. (Since the dock rework in 0.7.0 a later Load IFC no longer regenerates: it only
+  adds missing activities, so a re-import keeps formwork; the explicit **▾** → Generate 4D
+  Schedule still destroys it.)
 - **One scaffold, one activity.** A prefix can belong to one action. A real façade scaffold serves
   the masonry, the quoins, the window surrounds, the cornice and the eaves — several activities
   over months. Today it has to be attached to one of them and the others are scheduled as if it
@@ -127,5 +129,8 @@ laydown area rather than appearing above their place.
 - **Inference could use the IFC class** (`IfcWall`, `IfcSlab`, `IfcWindow`…) as a second signal
   when an activity's name says nothing — the adapter would need to keep it on the part.
 - **Look-at camera targets** (`"look_at": "D4"`) — deferred from camera keyframes.
+- **The schedule inspector has 15 columns.** The dock rework in 0.7.0 cleared the buttons;
+  the grid is next. *Unidades/Día* is another view of *Duración*, *Fecha Fin* is derived, *Ancla*
+  and *Escalonado (s)* are for fine control — candidates for a "more columns" toggle.
 - **Mixed Spanish/English labels in the dock** — tooltips give the English names; a proper
   language setting would remove the need.

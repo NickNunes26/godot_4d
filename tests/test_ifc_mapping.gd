@@ -162,6 +162,34 @@ func _init() -> void:
 	_check("untouched K1 follows the new rule", by3["K1"].type, "drop_in")
 	_check("K1 now staggered (drop_in)", by3["K1"].batch, false)
 
+	print("=== a later model adds only what the schedule doesn't cover")
+	var on_disk := {
+		"steps": [{"actions": [
+			{"id": "K1", "target_prefix": "K1", "type": "fill_up", "start_date": "2026-05-01", "duration_days": 9},
+			{"target_prefix": "K2_", "type": "rise_up"},   # hand-written, other id
+		]}],
+		"static_prefixes": ["Old_"],
+		"excluded_prefixes": ["Gone"],
+	}
+	var fresh := {
+		"steps": [{"actions": [
+			{"id": "K1", "target_prefix": "K1", "start_date": "2026-03-02", "duration_days": 4},
+			{"id": "K2", "target_prefix": "K2"},
+			{"id": "Gone_1", "target_prefix": "Gone_1"},
+			{"id": "Z99_Andamio", "target_prefix": "Z99_Andamio"},
+		]}],
+		"static_prefixes": ["K3", "Old_"],
+	}
+	var added := IFCScheduleGenerator.add_new_actions(on_disk, fresh)
+	_check("only the uncovered action is added", added, ["Z99_Andamio"])
+	_check("existing K1 keeps its own dates", [on_disk.steps[0].actions[0].start_date, on_disk.steps[0].actions[0].duration_days], ["2026-05-01", 9])
+	_check("appended to the schedule", on_disk.steps[0].actions.size(), 3)
+	_check("new static prefixes merged, old kept", on_disk.static_prefixes, ["K3", "Old_"])
+	_check("excluded list untouched", on_disk.excluded_prefixes, ["Gone"])
+	_check("nothing new: nothing added", IFCScheduleGenerator.add_new_actions(on_disk, fresh), [])
+	var empty_disk := {}
+	_check("a file with no steps gets one", IFCScheduleGenerator.add_new_actions(empty_disk, fresh).size(), 4)
+
 	print("=== dialog builds, gates OK on required roles, and returns the picks")
 	var dlg := IfcMappingDialog.new()
 	root.add_child(dlg)

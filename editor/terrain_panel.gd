@@ -17,6 +17,10 @@ const _META_SECTION := "construction_4d_tool"
 var _toggle: Button
 var _body: VBoxContainer
 var _origin_label: Label
+# The hand-typed origin: shown when the model is not georeferenced, and behind
+# "Cambiar origen…" when it is -- a georeferenced import needs none of it.
+var _origin_toggle: Button
+var _origin_box: VBoxContainer
 var _latlon_edit: LineEdit
 var _e_edit: LineEdit
 var _n_edit: LineEdit
@@ -26,9 +30,11 @@ var _rot_edit: LineEdit
 var _preset: OptionButton
 var _auto_check: CheckBox
 var _near_check: CheckBox
-var _slope_spin: SpinBox
-var _margin_spin: SpinBox
+var _level_check: CheckBox
+var _more_toggle: Button
+var _more_box: VBoxContainer
 var _download_button: Button
+var _cancel_button: Button
 var _status: Label
 var _attribution: Label
 var _service: TerrainService
@@ -43,20 +49,19 @@ func _ready() -> void:
 	refresh()
 
 # --- UI ---------------------------------------------------------------------
+#
+# Only what the usual case needs is in view: where the model is, Descargar
+# terreno and the levelling switch. A georeferenced model needs nothing else --
+# the download starts after the import, the model is sat on the ground when its
+# height is unknown, and the date's sun is added. The rest is folded away.
 
 func _build_ui() -> void:
 	add_child(HSeparator.new())
-	_toggle = Button.new()
-	_toggle.flat = true
-	_toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_toggle.toggle_mode = true
-	_toggle.button_pressed = _meta("expanded", true)
-	_toggle.tooltip_text = "Terrain around the model: download elevation and orthophotos for the site, drape them under the model, and light it with the sun of the schedule's date."
-	_toggle.toggled.connect(func(on):
-		_body.visible = on
-		_set_meta("expanded", on)
-		_update_toggle_text())
-	add_child(_toggle)
+	_toggle = _fold_button(self, "Terreno", _meta("expanded", true),
+		"Terrain around the model: download elevation and orthophotos for the site, drape them under the model, and light it with the sun of the schedule's date.",
+		func(on):
+			_body.visible = on
+			_set_meta("expanded", on))
 
 	_body = VBoxContainer.new()
 	_body.visible = _toggle.button_pressed
@@ -67,28 +72,52 @@ func _build_ui() -> void:
 	_origin_label.tooltip_text = "Where the parts container's origin is on the map (SequenceManager.geo_origin): UTM easting/northing, height, zone, and where each came from."
 	_body.add_child(_origin_label)
 
+	_origin_toggle = _fold_button(_body, "Cambiar origen", false,
+		"Type the model's position by hand: for a model that is not georeferenced, or one placed wrongly.",
+		func(_on): _refresh_origin_box())
+	_origin_box = VBoxContainer.new()
+	_body.add_child(_origin_box)
 	var grid := GridContainer.new()
 	grid.columns = 4
-	_body.add_child(grid)
+	_origin_box.add_child(grid)
 	_latlon_edit = _field(grid, "Lat, lon", "40.41680, -3.70380", "Latitude, longitude of the model's centre in decimal degrees (e.g. copied from a web map). Applying it sets E/N and the UTM zone for you.")
 	_zone_spin = SpinBox.new()
 	_zone_spin.min_value = 0
 	_zone_spin.max_value = 60
-	_zone_spin.tooltip_text = "UTM zone of E/N (0 = unknown). Spain: 29 Galicia and the west, 30 most of the mainland, 31 Catalonia and the Balearics."
+	_zone_spin.tooltip_text = "UTM zone of E/N (0 = unknown: worked out at the download). Spain: 29 Galicia and the west, 30 most of the mainland, 31 Catalonia and the Balearics."
 	_label(grid, "Huso")
 	grid.add_child(_zone_spin)
 	_e_edit = _field(grid, "E", "", "Grid easting of the model's centre (the parts container origin), metres.")
 	_n_edit = _field(grid, "N", "", "Grid northing of the model's centre, metres.")
 	_h_edit = _field(grid, "Altura", "?", "Height of the parts container origin, metres. Leave empty if unknown: the model is then sat on the ground after the download.")
 	_rot_edit = _field(grid, "Giro °", "0", "Counter-clockwise angle from grid east to the model's local +X axis, degrees (IfcMapConversion rotation). Use it to turn a model that is not georeferenced.")
-
 	var apply_row := HFlowContainer.new()
-	_body.add_child(apply_row)
-	_button(apply_row, "Aplicar origen", "Writes the fields above into SequenceManager.geo_origin (source: manual). Lat/lon wins over E/N when both are filled.", _on_apply_origin)
-	_button(apply_row, "Deducir huso", "Finds the UTM zone by comparing the model's height with the ground height in each candidate zone (needs a known height and a provider that supports it -- Spain).", _on_detect_zone)
+	_origin_box.add_child(apply_row)
+	_button(apply_row, "Aplicar origen", "Writes the fields above into SequenceManager.geo_origin (source: manual) and fetches the terrain for that place -- unless the terrain already there covers it, in which case it just moves under the model. Lat/lon wins over E/N when both are filled.", _on_apply_origin)
 
+	var actions := HFlowContainer.new()
+	_body.add_child(actions)
+	_download_button = _button(actions, "Descargar terreno", "Downloads (or reuses) elevation and orthophotos for the site and builds the terrain under the SequenceManager. Files go to res://terrain/<site>/. Runs by itself after Load IFC (4D) for a georeferenced model.", _on_download)
+	_cancel_button = _button(actions, "Cancelar", "Stops the download in progress after the current request.", func(): _service.cancelled = true)
+	_cancel_button.visible = false
+	_level_check = CheckBox.new()
+	_level_check.text = "Nivelar para edificio"
+	_level_check.tooltip_text = "On: a levelled pad at the level the model stands on and a pit down to the footings, following the schedule's earthworks (site levelling / topsoil, excavation). Off: the ground as downloaded, e.g. for a bridge.
+
+Switched on by itself when the terrain is first built for a schedule with earthworks. Adjust the platforms afterwards in the Terrain node's Inspector (Platforms; slope and margin under Levelling from the model)."
+	_level_check.toggled.connect(_on_level_toggled)
+	actions.add_child(_level_check)
+
+	_more_toggle = _fold_button(_body, "Más opciones", _meta("more", false),
+		"Terrain size, near textures, your own files, and setting the model on the ground.",
+		func(on):
+			_more_box.visible = on
+			_set_meta("more", on))
+	_more_box = VBoxContainer.new()
+	_more_box.visible = _more_toggle.button_pressed
+	_body.add_child(_more_box)
 	var opts := HFlowContainer.new()
-	_body.add_child(opts)
+	_more_box.add_child(opts)
 	_preset = OptionButton.new()
 	var keys := TerrainSpec.PRESETS.keys()
 	for i in keys.size():
@@ -110,29 +139,10 @@ func _build_ui() -> void:
 	_near_check.tooltip_text = "Also fetch tiled leaf-litter and rock textures (Poly Haven, CC0, ~15 MB once per project) that replace the blurry orthophoto close to the camera."
 	_near_check.toggled.connect(func(on): _set_meta("near", on))
 	opts.add_child(_near_check)
-
-	var actions := HFlowContainer.new()
-	_body.add_child(actions)
-	_download_button = _button(actions, "Descargar terreno", "Downloads (or reuses) elevation and orthophotos for the site and builds the terrain under the SequenceManager. Files go to res://terrain/<site>/.", _on_download)
-	_button(actions, "Archivos propios…", "Builds the terrain from your own files instead: an .asc elevation grid (UTM in the model's zone, or degrees) plus optional JPG/PNG orthophotos with world files (.jgw/.pgw). GeoTIFF is not supported by Godot.", _on_files)
-	_button(actions, "Comprobar posición", "Compares every part with the ground under it and reports whether the model floats or is buried.", _on_check)
-	_button(actions, "Asentar en el suelo", "Changes the origin height so the part reaching deepest into the ground just touches it. For models with no real height.", _on_sit)
-	_button(actions, "Quitar terreno", "Removes the terrain node from the scene (the downloaded files stay in res://terrain/).", _on_remove)
-	_button(actions, "Añadir sol", "Adds a GeoSun: a directional light placed where the sun is over the site on the timeline's date at 11:00 local time.", _on_add_sun)
-	_button(actions, "Cancelar", "Stops the download in progress after the current request.", func(): _service.cancelled = true)
-
-	var grading := HFlowContainer.new()
-	_body.add_child(grading)
-	_label(grading, "Talud H:V")
-	_slope_spin = _spin(grading, 0.0, 10.0, 0.1, _meta("slope", 1.5),
-		"Bank slope of the platform: metres of horizontal run per metre of height (1.5 is a usual earth slope). The excavation pit uses at most 0.5.")
-	_slope_spin.value_changed.connect(func(v): _set_meta("slope", v))
-	_label(grading, "Margen m")
-	_margin_spin = _spin(grading, 0.0, 100.0, 0.5, _meta("margin", 0.0),
-		"Extra room around the model's plan extent for the levelled pad, metres. The terrain grid already levels up to one cell diagonal (7 m at 5 m cells) beyond it, so 0 usually leaves a working apron.")
-	_margin_spin.value_changed.connect(func(v): _set_meta("margin", v))
-	_button(grading, "Nivelar desde el modelo", "Levels the ground for a building: a pad at the level the model stands on, over its plan extent plus the margin, and a pit down to the footings. Both follow the schedule's earthwork activities (site levelling / topsoil, excavation) when it has any. Replaces the terrain's current platforms; edit them afterwards in the Terrain node's inspector (Platforms).", _on_level_from_model)
-	_button(grading, "Terreno natural", "Removes every platform: the ground as downloaded, e.g. for a bridge.", _on_natural_ground)
+	var more_actions := HFlowContainer.new()
+	_more_box.add_child(more_actions)
+	_button(more_actions, "Archivos propios…", "Builds the terrain from your own files instead: an .asc elevation grid (UTM in the model's zone, or degrees) plus optional JPG/PNG orthophotos with world files (.jgw/.pgw). GeoTIFF is not supported by Godot.", _on_files)
+	_button(more_actions, "Asentar en el suelo", "Changes the origin height so the part reaching deepest into the ground just touches it. Done by itself after the download when the height is unknown; this is for a known height that is wrong.", _on_sit)
 
 	_status = Label.new()
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -143,10 +153,36 @@ func _build_ui() -> void:
 	_attribution.modulate = Color(1, 1, 1, 0.7)
 	_attribution.tooltip_text = "Data licences require this credit wherever the terrain is shown."
 	_body.add_child(_attribution)
-	_update_toggle_text()
 
-func _update_toggle_text() -> void:
-	_toggle.text = ("▾ " if _toggle.button_pressed else "▸ ") + "Terreno"
+## A flat "▸ Title" / "▾ Title" button that folds a section.
+func _fold_button(parent: Control, title: String, pressed: bool, tip: String, on_toggled: Callable) -> Button:
+	var b := Button.new()
+	b.flat = true
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.toggle_mode = true
+	b.button_pressed = pressed
+	b.tooltip_text = tip
+	var label := func(): b.text = ("▾ " if b.button_pressed else "▸ ") + title
+	label.call()
+	b.toggled.connect(func(on):
+		label.call()
+		on_toggled.call(on))
+	parent.add_child(b)
+	return b
+
+## The manual-origin fields: always for a model with no position, otherwise
+## only when asked for.
+func _refresh_origin_box() -> void:
+	var geo := _geo(_sequence_manager())
+	var located := geo != null and geo.has_position()
+	_origin_toggle.visible = located
+	_origin_box.visible = not located or _origin_toggle.button_pressed
+
+## Descargar terreno and Cancelar share one place: only one of them can act.
+func _set_busy(on: bool) -> void:
+	_busy = on
+	_download_button.visible = not on
+	_cancel_button.visible = on
 
 func _label(parent: Control, text: String) -> void:
 	var l := Label.new()
@@ -256,7 +292,10 @@ func refresh() -> void:
 		_zone_spin.set_value_no_signal(geo.utm_zone)
 		_h_edit.text = "%.2f" % geo.height if geo.height_known else ""
 		_rot_edit.text = "%.4f" % geo.rotation_deg
+	_refresh_origin_box()
 	var terrain := _terrain_node(sm)
+	_level_check.disabled = not (terrain and terrain.data)
+	_level_check.set_pressed_no_signal(terrain != null and not terrain.platforms.is_empty())
 	_attribution.text = terrain.data.attribution if terrain and terrain.data else ""
 	if terrain and terrain.data and _near_check.button_pressed and GroundTextures.present():
 		_attribution.text += "\n" + GroundTextures.CREDIT
@@ -298,25 +337,23 @@ func _on_apply_origin() -> void:
 		geo.rotation_deg = _rot_edit.text.to_float()
 	_latlon_edit.text = ""
 	EditorInterface.mark_scene_as_unsaved()
+	_origin_toggle.button_pressed = false
+	refresh()
+	# Applying an origin is always followed by the terrain for it: a terrain
+	# that already covers the new place just moves under the model (it follows
+	# geo_origin), anything else is fetched.
+	var terrain := _terrain_node(sm)
+	if terrain and terrain.data and _covers(terrain.data, geo, _samples(sm, geo)):
+		var msg := "Origen aplicado; el terreno actual ya lo cubre."
+		if not geo.height_known:
+			var lift := _sit(sm, geo, terrain.data)
+			if not is_nan(lift):
+				msg += " Altura desconocida: modelo asentado en el suelo (origen a %.2f m)." % geo.height
+		_set_status(msg + " " + TerrainBuilder.position_check(terrain.data, _samples(sm, geo)).text)
+		refresh()
+		return
 	_set_status("Origen aplicado.")
-	refresh()
-
-func _on_detect_zone() -> void:
-	if _busy:
-		return
-	var sm := _sequence_manager()
-	var geo := _geo(sm)
-	if not geo or not geo.has_position():
-		_set_status("Primero hace falta la posición (E, N).")
-		return
-	_busy = true
-	var zone := await _detect_zone(sm, geo)
-	_busy = false
-	if zone > 0:
-		geo.utm_zone = zone
-		geo.zone_source = "auto"
-		EditorInterface.mark_scene_as_unsaved()
-	refresh()
+	_on_download()
 
 ## Zone from ground heights; 0 (with the reason in the status line) if it
 ## cannot be told safely.
@@ -342,11 +379,9 @@ func _on_download() -> void:
 	if not geo or not geo.has_position():
 		_set_status("El modelo no tiene georreferencia: indica lat/lon (o E, N y huso) y pulsa Aplicar origen.")
 		return
-	_busy = true
-	_download_button.disabled = true
+	_set_busy(true)
 	await _download(sm, geo)
-	_busy = false
-	_download_button.disabled = false
+	_set_busy(false)
 	refresh()
 
 func _download(sm: Node, geo: GeoOrigin) -> void:
@@ -375,6 +410,7 @@ func _finish(sm: Node, geo: GeoOrigin, result: Dictionary) -> void:
 			_set_status("Texturas de suelo no disponibles (%s); el terreno usa solo la ortofoto." % err)
 	EditorInterface.get_resource_filesystem().scan()
 	var data: TerrainData = result.data
+	var is_new := _terrain_node(sm) == null
 	var terrain := _place_terrain(sm, geo, data)
 	var msg := "Terreno listo: %d x %d puntos cada %.0f m, alturas %.1f a %.1f m (%s)." % [
 		data.grid_n, data.grid_n, data.cell, data.min_height, data.max_height, result.path]
@@ -384,7 +420,17 @@ func _finish(sm: Node, geo: GeoOrigin, result: Dictionary) -> void:
 		if is_nan(lift):
 			msg += " (No se pudo asentar: el modelo no tiene piezas sobre el terreno.)"
 	var check := TerrainBuilder.position_check(data, _samples(sm, geo))
-	_set_status(msg + " " + check.text)
+	msg += " " + check.text
+	# A first terrain under a schedule with earthworks is a building site:
+	# level it. Later downloads keep whatever the levelling is now.
+	if terrain and is_new:
+		var levelled := _level(sm, terrain, true)
+		if levelled != "":
+			msg += " " + levelled
+	var sun := _ensure_sun()
+	if sun != "":
+		msg += " " + sun
+	_set_status(msg)
 	if terrain:
 		EditorInterface.mark_scene_as_unsaved()
 
@@ -413,15 +459,6 @@ func _sit(sm: Node, geo: GeoOrigin, data: TerrainData) -> float:
 	geo.height_known = true
 	return check.lift
 
-func _on_check() -> void:
-	var sm := _sequence_manager()
-	var terrain := _terrain_node(sm)
-	var geo := _geo(sm)
-	if not terrain or not terrain.data or not geo:
-		_set_status("No hay terreno en la escena.")
-		return
-	_set_status(TerrainBuilder.position_check(terrain.data, _samples(sm, geo), terrain.height_at).text)
-
 func _on_sit() -> void:
 	var sm := _sequence_manager()
 	var terrain := _terrain_node(sm)
@@ -437,20 +474,38 @@ func _on_sit() -> void:
 	_set_status("Origen %+.2f m: ahora a %.2f m. %s" % [lift, geo.height, TerrainBuilder.position_check(terrain.data, _samples(sm, geo)).text])
 	refresh()
 
-func _on_level_from_model() -> void:
+func _on_level_toggled(on: bool) -> void:
 	var sm := _sequence_manager()
 	var terrain := _terrain_node(sm)
-	var container := _container(sm)
 	if not terrain or not terrain.data:
 		_set_status("Primero hace falta el terreno (Descargar terreno).")
+		refresh()
 		return
+	if on:
+		var text := _level(sm, terrain, false)
+		_set_status(text if text != "" else "El modelo no tiene piezas con geometría.")
+	elif not terrain.platforms.is_empty():
+		terrain.platforms = []
+		terrain.rebuild()
+		EditorInterface.mark_scene_as_unsaved()
+		_set_status("Plataformas quitadas: terreno natural.")
+	refresh()
+
+## Levels the ground for a building: a pad at the level the model stands on
+## and a pit down to the footings, tied to the schedule's earthworks. With
+## `only_with_earthworks`, does nothing unless some platform found an earthwork
+## activity to follow -- the automatic case, where a schedule with no
+## earthworks says nothing about whether the site is levelled. Returns the
+## status text, or "" when nothing was done.
+func _level(sm: Node, terrain: ConstructionTerrain, only_with_earthworks: bool) -> String:
+	var container := _container(sm)
 	if not container:
-		_set_status("No hay modelo en la escena.")
-		return
-	var list := TerrainGrading.platforms_from_model(container, _schedule_actions(sm), _margin_spin.value, _slope_spin.value)
+		return ""
+	var list := TerrainGrading.platforms_from_model(container, _schedule_actions(sm), terrain.level_margin, terrain.level_slope)
 	if list.is_empty():
-		_set_status("El modelo no tiene piezas con geometría.")
-		return
+		return ""
+	if only_with_earthworks and not list.any(func(p): return not p.activities.is_empty()):
+		return ""
 	terrain.platforms = list
 	terrain.rebuild()
 	EditorInterface.mark_scene_as_unsaved()
@@ -465,20 +520,7 @@ func _on_level_from_model() -> void:
 		lines.append("%s %.0f x %.0f m a cota %.2f%s%s" % [p.name, ext.size.x, ext.size.y, p.level, abs_level, when])
 	var g := terrain.grading()
 	var volumes := " Desmonte %.0f m³, terraplén %.0f m³." % [g.cut_m3, g.fill_m3] if g else ""
-	_set_status("Nivelado: " + "; ".join(lines) + "." + volumes + " Ajusta las plataformas en el inspector del nodo Terrain.")
-
-func _on_natural_ground() -> void:
-	var terrain := _terrain_node(_sequence_manager())
-	if not terrain:
-		_set_status("No hay terreno en la escena.")
-		return
-	if terrain.platforms.is_empty():
-		_set_status("El terreno ya es el natural.")
-		return
-	terrain.platforms = []
-	terrain.rebuild()
-	EditorInterface.mark_scene_as_unsaved()
-	_set_status("Plataformas quitadas: terreno natural.")
+	return "Nivelado: " + "; ".join(lines) + "." + volumes + " Ajusta las plataformas en el inspector del nodo Terrain."
 
 ## [{id, prefix, text}] for every action in the scene's construction JSON.
 func _schedule_actions(sm: Node) -> Array:
@@ -496,24 +538,13 @@ func _schedule_actions(sm: Node) -> Array:
 				out.append({"id": id, "prefix": a.get("target_prefix", ""), "text": "%s %s %s" % [id, a.get("name", ""), a.get("comment", "")]})
 	return out
 
-func _on_remove() -> void:
-	var terrain := _terrain_node(_sequence_manager())
-	if not terrain:
-		_set_status("No hay terreno que quitar.")
-		return
-	terrain.get_parent().remove_child(terrain)
-	terrain.queue_free()
-	EditorInterface.mark_scene_as_unsaved()
-	_set_status("Terreno quitado (los archivos siguen en %s)." % CACHE_ROOT)
-	refresh()
-
-func _on_add_sun() -> void:
+## Adds a GeoSun -- the sun over the site on the timeline's date -- when the
+## scene has no directional light at all; an authored light always wins.
+## Returns the status text, or "" when nothing was added.
+func _ensure_sun() -> String:
 	var root := EditorInterface.get_edited_scene_root()
-	if not root:
-		return
-	if not root.find_children("*", "DirectionalLight3D", true, false).filter(func(n): return n is GeoSun).is_empty():
-		_set_status("Ya hay un GeoSun en la escena.")
-		return
+	if not root or not root.find_children("*", "DirectionalLight3D", true, false).is_empty():
+		return ""
 	var sun := GeoSun.new()
 	sun.name = "GeoSun"
 	sun.shadow_enabled = true
@@ -523,10 +554,8 @@ func _on_add_sun() -> void:
 	if sm:
 		sun.sequence_manager_path = sun.get_path_to(sm)
 	sun.set_date_from_unix(Time.get_unix_time_from_system())
-	var others := root.find_children("*", "DirectionalLight3D", true, false).filter(func(n): return not (n is GeoSun))
 	EditorInterface.mark_scene_as_unsaved()
-	_set_status("GeoSun añadido: sigue la fecha de la línea de tiempo (a las %.2f h locales)." % sun.time_of_day
-		+ (" Hay otra luz direccional (%s): desactívala si no quieres dos soles." % others[0].name if not others.is_empty() else ""))
+	return "Sol de la fecha añadido (GeoSun, a las %.2f h locales)." % sun.time_of_day
 
 func _on_files() -> void:
 	var sm := _sequence_manager()
@@ -561,11 +590,11 @@ func _on_files_selected(paths: PackedStringArray) -> void:
 	var sm := _sequence_manager()
 	var geo := _geo(sm)
 	var spec := TerrainSpec.create(geo.utm_zone, geo.easting, geo.northing, _preset.get_item_metadata(_preset.selected), geo.south)
-	_busy = true
+	_set_busy(true)
 	var result := await _service.build_from_files(spec, asc, images, CACHE_ROOT)
 	if result.error == "":
 		await _finish(sm, geo, result)
-	_busy = false
+	_set_busy(false)
 	refresh()
 
 ## Called by the dock once an IFC import has finished and SequenceManager has

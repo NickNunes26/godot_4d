@@ -14,8 +14,28 @@ Python, no extra GDExtension, no external program.
    by itself when the import finishes. Otherwise open the dock's **Terreno** section and press
    **Descargar terreno**. When the scene already has a terrain that covers every model (a second
    model of the same site, or a re-import), it is kept and only the position check runs.
-3. Optional: **Añadir sol** adds a `GeoSun` that follows the timeline's date.
+3. When a terrain is first built, the dock also, by itself: sits a model of unknown height on the
+   ground, levels the ground when the schedule has earthworks (**Nivelar para edificio**, see
+   "Levelled platforms"), adds a `GeoSun` that follows the timeline's date when the scene has no
+   directional light, and reports the position check.
 4. Save the scene.
+
+### The dock
+
+The **Terreno** section shows what the usual case needs: the origin line, **Descargar terreno**
+(**Cancelar** in its place during a download) and the **Nivelar para edificio** box. The origin
+fields (Lat, lon / Huso / E / N / Altura / Giro ° and **Aplicar origen**) are shown when the model
+has no position and folded under **▸ Cambiar origen** when it has one; **Aplicar origen** fetches
+the terrain for the new place, or, when the terrain already there covers it, lets it follow
+(`ConstructionTerrain` tracks `geo_origin`). **▸ Más opciones** holds the size presets, *Al
+importar IFC*, *Texturas cercanas*, **Archivos propios…** and **Asentar en el suelo**.
+
+Five buttons were removed in 0.7.0 because the tool does their job: *Deducir huso* (a download
+with zone 0 deduces it, "The UTM zone"), *Comprobar posición* (every download, Asentar and
+Aplicar origen print the check), *Añadir sol* (added when the terrain is built and the scene has no
+light), *Quitar terreno* (delete the Terrain node), and *Nivelar desde el modelo* / *Terreno
+natural* (one checkbox). *Talud H:V* and *Margen m* moved to the Terrain node
+(`level_slope`, `level_margin`).
 
 The first download of a site takes a few seconds to a minute (about 20 MB); later builds of the
 same site reuse the files.
@@ -76,11 +96,13 @@ hundreds of kilometres apart. In order:
    and the others miss by hundreds.
 3. **By hand** in the dock (the `Huso` field), or implied by entering latitude/longitude.
 
+Deduction runs by itself when a download starts with zone 0.
+
 ### Models that are not georeferenced
 
 Type the model centre's latitude and longitude (for example copied from a web map) or its E, N
-and zone into the **Terreno** section and press **Aplicar origen**. Leave **Altura** empty if the
-height is unknown: after the download the model is *sat on the ground* (raised or lowered until
+and zone into the **Terreno** section and press **Aplicar origen**; the terrain downloads. Leave
+**Altura** empty if the height is unknown: after the download the model is *sat on the ground* (raised or lowered until
 the part reaching deepest into the ground just touches it). **Giro °** turns a model whose axes
 are not aligned with grid north. All of these can also be edited later on `SequenceManager.geo_origin`
 in the inspector; the terrain follows immediately.
@@ -215,10 +237,11 @@ steps with their own timing. The shader adds `change × progress` per slot in `h
 and everything else follow. Bare earth is a warm soil colour carrying the rock texture's detail
 near the camera, shown where a point is inside a footprint or moved by at least 0.3 m. Collision
 is the finished ground: rebuilding a 1025² height field every frame would cost far more than it
-is worth. `ConstructionTerrain.height_at()` and **Comprobar posición** use the levelled ground.
+is worth. `ConstructionTerrain.height_at()` and the position check use the levelled ground.
 
-**From the model** (dock: **Nivelar desde el modelo**, with **Talud H:V** and **Margen m**).
-`TerrainGrading.platforms_from_model()` proposes:
+**From the model** (dock: **Nivelar para edificio**; slope and margin from the Terrain node's
+`level_slope`, default 1.5, and `level_margin`, default 0). `TerrainGrading.platforms_from_model()`
+proposes:
 
 - a **pad** over the model's plan extent plus the margin (default 0: the levelled ring above
   already leaves an apron). Its level is the bottom elevation carrying the largest plan area of
@@ -234,8 +257,13 @@ is worth. `ConstructionTerrain.height_at()` and **Comprobar posición** use the 
   pit never appears before its pad.
 
 Parts are measured at their rest placement (`original_pos` / `original_scale`), so a running
-preview does not throw it off. The proposal replaces the current platforms; adjust it in the
-Terrain node's inspector. **Terreno natural** removes them all.
+preview does not throw it off. Ticking the box replaces the current platforms with the proposal;
+adjust them in the Terrain node's inspector. Unticking removes them all (natural ground).
+
+**Automatic levelling.** When the dock builds a terrain node for the first time, it makes the
+proposal and keeps it only if some platform found an earthwork activity to follow: a schedule
+with earthworks is a building site; one without says nothing either way, so the ground stays
+natural. A later download into the same node keeps whatever the levelling is.
 
 For `pazo_xilloi.tscn` this gives a pad at 25.47 m (the bottom of the model's own `Z00_Terreo`
 ground, 60 × 46 m), tied to `C02_TerraVexetal`. It also gives a pit at 23.67 m, exactly the
@@ -248,7 +276,8 @@ reports the range of part bottoms relative to it and how many parts are buried (
 1.5 m under ground). It warns when more than half the parts are buried, or when the lowest part is
 more than 40 m above the ground (the model floats). Piles and footings are *meant* to be buried,
 so a bridge on piles legitimately reports many buried parts; the warning is advice, never a block.
-**Comprobar posición** re-runs it; **Asentar en el suelo** applies its suggested lift.
+It runs after every download, **Aplicar origen** and **Asentar en el suelo** (*▸ Más opciones*),
+which applies its suggested lift.
 
 ## The sun
 

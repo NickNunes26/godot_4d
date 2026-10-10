@@ -85,10 +85,10 @@ func setup(building_parts: Dictionary) -> void:
 		# Generated formwork is deliberately not clash-checked (07_FORMWORK.md,
 		# decision 3). It multiplies the part count 3-5x, and every part costs a
 		# convex hull *and* a trimesh built from scratch here with no caching --
-		# which is already why the dock needs an explicit Recalculate button. In
+		# which makes every dock rebuild of an install schedule slower. In
 		# exchange it would detect clashes against temporary scaffolding, and on
-		# a model with no `install` actions at all nothing is ever a mover, so
-		# the value is currently zero. Re-enabling is deleting this check;
+		# a model with no `install` actions at all nothing is ever a mover (setup
+		# is not even called then), so the value is currently zero. Re-enabling is deleting this check;
 		# _part_to_commander already rolls panels up to their element, so they
 		# would not flag against the concrete they hold.
 		if node.has_meta(FormworkBuilder.META_OWNER):

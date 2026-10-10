@@ -10,11 +10,10 @@
 ## Owned by TimelineDock, which passes in the GridContainer to render into
 ## and a SpatialGrouper shared with its own schedule rebuilds (so unit-count
 ## lookups hit the same per-prefix group cache instead of recomputing it).
-## This class never rebuilds a ConstructionSchedule itself or touches
-## _schedule_dirty directly -- every field edit calls the dock-supplied
-## _on_dirty Callable instead, keeping the "mark dirty, Recalculate rebuilds
-## on demand" policy owned by the dock (see timeline_dock.gd's
-## _schedule_dirty doc comment for why).
+## This class never rebuilds a ConstructionSchedule itself -- every field edit
+## calls the dock-supplied _on_dirty Callable instead, keeping the "mark
+## unsaved, rebuild once the edits pause" policy owned by the dock (see
+## timeline_dock.gd's _rebuild_timer doc comment for why).
 class_name ScheduleInspector
 extends RefCounted
 
@@ -134,8 +133,7 @@ var _formwork_fields: Array = []
 ## timeline_dock.tscn's InspectorList). grouper: shared with the dock's own
 ## schedule rebuilds so Units/Day <-> Duration conversions hit the same
 ## per-prefix group cache. on_dirty: called with no arguments whenever a
-## field edit changes sequence_data -- the dock's hook into
-## _set_schedule_dirty(true).
+## field edit changes sequence_data -- the dock's _on_schedule_edited().
 func _init(grid: GridContainer, grouper: SpatialGrouper, on_dirty: Callable) -> void:
 	_grid = grid
 	_grouper = grouper
