@@ -1,16 +1,28 @@
 # 4D Construction Tool — Future work (to-do list)
 
-> **Status: item 1 and the smaller items open; item 2 built (`13_SITE_EQUIPMENT.md`).** The
+> **Status: items 1, 3, 4 and 5 open; item 2 built (`13_SITE_EQUIPMENT.md`).** The
 > planned work, in priority order. Each item records what is wrong or missing today, what a good
 > version needs, and how we would know it is done. When an item is built, its reasoning moves
 > into its own numbered doc (as `07_FORMWORK.md`, `11_TYPES_REALISM_CLASHES.md` and
 > `13_SITE_EQUIPMENT.md` did) and it is marked here.
+
+**What "realism" means from here on.** Build4D is an interactive 4D planning tool: people place
+the crane, change the schedule and see the consequences on the site. Realism therefore matters
+less in **looks** than in **shapes**: the geometry that clash detection checks — crane jib, hook
+path and laydown area, the excavator's working envelope, scaffolding, props, the building at each
+date — has to be close enough to the real thing that a reported clash, or its absence, can be
+trusted. Broad-strokes models stay the rule (the envelope matters, not the detail), and among the
+open items the crane geometry that is not yet collision-checked (section 3) is a bigger realism
+gap than anything visual. Presentation pictures are made outside Godot, in Blender (item 4); the
+viewport only needs to read clearly on an ordinary laptop (item 5).
 
 | # | Item | Size |
 |---|---|---|
 | 1 | [Scaffolding and formwork: robust changes needed](#1-scaffolding-and-formwork-robust-changes-needed) | Large |
 | 2 | ~~[Model support equipment: tower crane, mobile crane, truck, excavator](#2-model-support-equipment)~~ **Built** — `13_SITE_EQUIPMENT.md` | Medium |
 | 3 | [Smaller open items](#3-smaller-open-items) | Small each |
+| 4 | [Export to Blender for presentation stills](#4-export-to-blender-for-presentation-stills) | Medium |
+| 5 | [A clearer viewport, with quality levels](#5-a-clearer-viewport-with-quality-levels) | Small |
 
 ---
 
@@ -134,3 +146,101 @@ laydown area rather than appearing above their place.
   and *Escalonado (s)* are for fine control — candidates for a "more columns" toggle.
 - **Mixed Spanish/English labels in the dock** — tooltips give the English names; a proper
   language setting would remove the need.
+
+---
+
+## 4. Export to Blender for presentation stills
+
+### Where it stands
+
+The only pictures Build4D produces are what the Godot viewport shows: a screenshot, or a Movie
+Maker recording. That viewport is a real-time renderer (Forward+) showing the IFC's own
+materials, which are flat colours with no textures and, normally, no UV coordinates. Good
+enough to plan with; not what goes into a client presentation.
+
+Making Godot look photoreal is the wrong investment (see "What realism means" above). Blender's
+**Cycles** is a path tracer: it computes the light physically, renders each frame from scratch
+(so geometry that changes with the schedule is no problem), and is free. The job is a **few
+stills of the model** — the finished building, or the site on a chosen date — not a 4D video:
+the interactive 4D stays in Godot.
+
+**Budget: a handful of shots in about 20 minutes of rendering** on the reference laptop (GeForce
+GTX 1050 Ti 4 GB, Core i7-8750H). Not measured yet; the estimate is 3–8 minutes per 1080p
+exterior at 128–256 samples with denoising, so 3–5 shots. 4K and glazed interiors take several
+times longer. The binding limit is the card's **4 GB of video memory**: textures at 1–2K,
+restrained vegetation, or Cycles fails or falls back to the much slower CPU.
+
+### What a good version needs
+
+1. **Export from Godot, not from the raw IFC.** A dock action (*Exportar a Blender…*) writes the
+   scene as glTF (`GLTFDocument`) **at the timeline's current date**: parts in their state on
+   that day, the terrain, the equipment where it was placed. Importing the IFC straight into
+   Blender (Bonsai) would lose all three and the georeferenced placement.
+2. **A sidecar JSON** next to the `.glb`: the site's latitude and longitude (from the
+   georeference), the date and time, the sun direction `GeoSun` computed, the cameras to render,
+   and for each mesh the IFC material or style name and the part name. Check whether GDIFC's
+   material names survive into the glTF; the sidecar covers it if they don't.
+3. **Custom shaders do not survive glTF.** The terrain's ground shader in particular: the
+   exporter gives the terrain a plain material and the sidecar marks it, so the Blender side can
+   apply its own ground material.
+4. **A Blender setup script** shipped with the addon (Python, e.g. `tools/blender/`). It imports
+   the `.glb` and the sidecar and then:
+   - swaps materials by keyword for CC0 PBR sets (ambientCG, Poly Haven — bundling allowed):
+     *formigón / hormigón* → concrete, *granito / cantería / sillería* → stone, *pizarra /
+     lousa* → slate, *tella / teja* → roof tile, *madeira / madera* → timber, *vidro / vidrio* →
+     glass, *revoco / enfoscado* → render. Box projection, because the IFC meshes have no UVs.
+     One keyword table, in the spirit of `TaskClassifier`, shared with item 5;
+   - sets Blender's physical sky and sun from the sidecar, so the light matches the date and
+     place Build4D shows;
+   - creates the cameras from the sidecar;
+   - sets Cycles for the budget: GPU, denoising, adaptive sampling, 1080p by default, textures
+     capped at 2K.
+5. **Shots framed in Godot.** A short list of saved views ("photo cameras") in the scene, written
+   into the sidecar, so nobody has to frame shots again in Blender. Preview in EEVEE (seconds per
+   frame), final render in Cycles.
+
+### Done when
+
+On the test project: one action in Godot, then opening Blender and running the script, gives
+four 1080p Cycles stills of the finished *pazo* on its terrain in **under 20 minutes of rendering
+on the reference laptop**, with stone, slate, timber, glass and render recognisable and the sun
+matching what `GeoSun` shows for that date and time. The same steps at an earlier date give a
+still of the site mid-construction, cranes included.
+
+---
+
+## 5. A clearer viewport, with quality levels
+
+### Where it stands
+
+When a scene has no environment of its own, `SequenceManager._default_environment()` adds a
+procedural sky, ambient light from the sky, Filmic tonemapping and one shadowed sun. Parts keep
+the IFC's flat colours. Glass, stone, slate and render are told apart by colour alone, and depth
+is hard to read in a dense model.
+
+### What a good version needs
+
+The aim is **legibility, not photorealism** — photos are item 4. And it has to run on the
+machines the people using it actually have; the reference is the same GTX 1050 Ti laptop.
+
+1. **A quality setting** on the `SequenceManager` (*Bajo / Medio / Alto*, default *Medio*):
+   - *Bajo*: today's environment.
+   - *Medio*: AgX tonemapping, SSAO, a physical sky driven by `GeoSun`, tuned shadow cascades.
+   - *Alto*: adds SSIL, SDFGI and light fog.
+
+   Frame rate measured on the test project for each level, during Play with the equipment
+   working.
+2. **Better flat materials without textures**: roughness, metallic and transparency set from the
+   same keyword table as item 4 (glass smooth and see-through, metal metallic, stone and render
+   rough). No UVs, no texture memory.
+3. **Authored environments still win**, as today: a scene with its own `WorldEnvironment` or sun
+   is left alone.
+4. **Check SDFGI with changing geometry** before putting it in *Alto*: parts appearing and
+   disappearing as the schedule plays may leave stale or leaking light.
+5. **Looks never change results.** No level touches part shapes or the collision geometry.
+
+### Done when
+
+On the test project, *Medio* holds 30 fps or more at 1080p on the reference laptop during Play
+with the equipment working; glass, stone, slate and render can be told apart by more than
+their colour; and the clash results are identical at every level.
