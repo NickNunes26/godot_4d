@@ -46,7 +46,8 @@ respect a material's own transparency, and clash detection that ignores designed
 `11_TYPES_REALISM_CLASHES.md`; this file's sections below carry short as-built notes pointing
 there. **Site equipment** followed the same day: a tower crane, a mobile crane, an excavator and a
 truck, generated procedurally, placed from the model and brought on and off site by the schedule,
-with no setup (`13_SITE_EQUIPMENT.md`, `equipment/`). **What's next is in `12_FUTURE_WORK.md`.**
+with no setup (`13_SITE_EQUIPMENT.md`, `equipment/`). Both shipped as **0.7.0**. **What's next is
+in `12_FUTURE_WORK.md`.**
 
 See `CHANGELOG.md` for a session-by-session log of
 what changed and why, `02_ROADMAP_MILESTONES.md` for the

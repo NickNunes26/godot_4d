@@ -4,7 +4,7 @@
 > (`EquipmentModels`), `equipment/site_equipment.gd` (`SiteEquipment`); hooks in
 > `runtime/sequence_manager.gd`, `runtime/timeline_controller.gd`, `editor/timeline_dock.gd`,
 > `core/construction_schedule.gd`, `terrain/construction_terrain.gd`. Tests:
-> `tests/test_equipment.gd` (90 checks). Measurements: `equipment/specs/` (`EquipmentSpecs`).
+> `tests/test_equipment.gd` (92 checks). Measurements: `equipment/specs/` (`EquipmentSpecs`).
 
 ## What you get
 
@@ -105,12 +105,17 @@ scene, each machine stands on the terrain height at its own spot instead
   building's centre. **Jib** = the farthest building-box corner + 6 m, rounded up to 5 m, 30–75 m.
   **Height** (ground to the underside of the jib) = the tallest part within the jib's reach + 10 m,
   at least 18 m. **Laydown**: 10 m beside the mast, the first of four spots clear of the building.
-- **Excavator**: 4 m off the front (+Z) edge of the pit, mid-way along it, facing in. The pit is the
+- **Excavator**: off the front (+Z) edge of the pit, mid-way along it, facing in. The pit is the
   dig parts that go more than 0.5 m below ground; stripping topsoil off the whole plot is excavator
-  work too, but the machine belongs at the hole. Its truck loads on its right (7.4 m out, beyond the
-  2.8 m tail swing) and drives off behind it.
+  work too, but the machine belongs at the hole. At least 4 m off, and further, a metre at a time,
+  until its whole track length stands on the pad: graded terrain follows a 5 m grid, so the pit
+  comes out wider than the parts that draw it (on the test project 4 m was 1.6 m down the bank).
+  Its truck loads on its right (7.4 m out, beyond the 2.83 m tail swing) and drives off behind it.
 - **Mobile crane**: per job, outside the pieces on the side away from the building — the pieces'
-  box radius + 7.5 m from their centre — with the carrier side-on to them.
+  box radius + 7.5 m from their centre — with the carrier side-on to them. If that spot is not
+  5 m clear of everything standing on the day of the lift (a part whose window has ended, or a
+  static one), it turns round the pieces and steps out until one is. On the test project the
+  granary's first spot was on the boundary wall; the crane now lifts it over the wall from outside.
 
 Explicit values win: `tower_height` and `jib_length` on the `SiteEquipment` node (0 = automatic),
 and the two marker nodes below.
@@ -174,6 +179,11 @@ earlier in the tree).
 - Excavator at the pit's front edge for *Retirada de terra vexetal* and *Escavación* (days 10–33).
 - Cost: building the machines 33 ms, the plan 18 ms, `follow_schedule()` 24 µs per frame.
 - Movie Maker: a full 380-frame recording ran to completion with all four machines in it.
+- **On the real terrain** (the downloaded IGN ground, levelled from the model: pad at −9.13 m,
+  pit to −10.93 m): every machine stands on the surface to within 1 cm — the tower crane on the
+  natural slope beside the pad at −10.04 m, its laydown, the excavator, the truck over its whole
+  round, the mobile crane at each of its three jobs — and each mobile-crane spot is clear of what
+  is built by then. A full-year scrub with parts, terrain and machines: 4–6 ms per date headless.
 
 ## Known gaps
 
@@ -190,7 +200,7 @@ earlier in the tree).
 
 ## Tests
 
-`tests/test_equipment.gd`, 90 checks on a box fixture (a 20 × 10 m building with its dig, footings,
+`tests/test_equipment.gd`, 92 checks on a box fixture (a 20 × 10 m building with its dig, footings,
 walls, a cornice, a roof, a cross 90 m away, a granary placed after the roof, street lights and a
 boundary wall 40 m out): node names and triangle budgets; dimensions; the excavator against the
 Cat 320 sheet (track length and width, ground and counterweight clearance, tail swing, cab top,
@@ -201,4 +211,5 @@ truck body; the mobile boom puts its tip 6 m over a target; placement (clear of 
 dragged out by the boundary wall, jib covering every corner, 10 m over the top); the plan (crane
 window, which pieces go to which crane, no crane for street lights); presence day by day (dig,
 half-erected mast, crane following a cornice stone, mobile crane beside the cross, crane gone,
-mobile crane back for the granary); the truck round; reset; a scene's own crane; opting out.
+mobile crane back for the granary, each mobile-crane spot clear of what is built by then); the
+truck round; reset; a scene's own crane; opting out.

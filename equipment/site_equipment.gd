@@ -449,11 +449,23 @@ static func _propose_laydown(marker: Node3D, ctx: Dictionary, tree: SceneTree) -
 	return Vector3(0, 0, 10)
 
 
-## The excavator stands 4 m off the dig's front (+Z) edge, mid-way along it,
-## facing in; its truck loads on its right and drives off behind it.
+## The excavator stands off the dig's front (+Z) edge, mid-way along it, facing
+## in; its truck loads on its right and drives off behind it. At least 4 m off,
+## and further, a metre at a time, until the whole length of its tracks is on
+## the pad rather than down the pit's bank: graded terrain follows a 5 m grid,
+## so the pit comes out several metres wider than the parts that draw it (on
+## the test project the excavator stood 1.6 m down the bank at 4 m).
 static func _propose_excavator_site(ctx: Dictionary, tree: SceneTree) -> Transform3D:
 	var dig: AABB = ctx.dig_box
 	var p := Vector3(dig.get_center().x, 0, dig.end.z + 4.0)
+	var half_track := EquipmentModels.EXC_TRACK_CENTRES / 2.0 + EquipmentModels.EXC_TRACK_WHEEL_R
+	for i in 13:
+		var low := INF
+		for dz in [-half_track, 0.0, half_track]:
+			low = minf(low, ground_at(tree, p + Vector3(0, 0, dz), ctx.ground))
+		if low > ctx.ground - 0.3:
+			break
+		p.z += 1.0
 	p.y = ground_at(tree, p, ctx.ground)
 	return Transform3D(Basis(), p)
 
@@ -537,10 +549,16 @@ func make_plan(schedule: ConstructionSchedule, building_parts: Dictionary) -> Di
 	if has_tower:
 		mast = Vector2(_tower.global_position.x, _tower.global_position.z)
 	var all_boxes: Array = []
+	# What stands on site from which day: a part from the end of its window, an
+	# unscheduled (static) one from the start. The mobile crane must set up clear
+	# of whatever is there on the day of its lift.
+	var standing: Array = []
 	for n in building_parts:
 		var b := rest_box(building_parts[n])
 		if b.size != Vector3.ZERO:
 			all_boxes.append(b)
+			var w := schedule.get_part_window(n)
+			standing.append({"box": b, "from": w.end_day if not w.is_empty() else -INF})
 	var wb := robust_box(all_boxes)
 	var work := Vector2(wb.get_center().x, wb.get_center().z)
 
@@ -562,7 +580,7 @@ func make_plan(schedule: ConstructionSchedule, building_parts: Dictionary) -> Di
 				entry["box"] = b
 				off_reach.append(entry)
 		if not off_reach.is_empty():
-			mobile_jobs.append(_mobile_job_for(off_reach, work))
+			mobile_jobs.append(_mobile_job_for(off_reach, work, standing))
 	tower_parts.sort_custom(func(x, y): return x.start < y.start)
 	mobile_jobs.sort_custom(func(x, y): return x.start < y.start)
 
@@ -580,7 +598,7 @@ func make_plan(schedule: ConstructionSchedule, building_parts: Dictionary) -> Di
 
 ## Where the mobile crane sets up for a lift: outside the pieces, on the side
 ## away from the building, its carrier side-on to them.
-func _mobile_job_for(entries: Array, work: Vector2) -> Dictionary:
+func _mobile_job_for(entries: Array, work: Vector2, standing: Array = []) -> Dictionary:
 	var box: AABB = entries[0].box
 	var start := INF
 	var finish := -INF
@@ -589,10 +607,30 @@ func _mobile_job_for(entries: Array, work: Vector2) -> Dictionary:
 		start = minf(start, e.start)
 		finish = maxf(finish, e.end)
 	var c := Vector2(box.get_center().x, box.get_center().z)
-	var dir := c - work
-	dir = dir.normalized() if dir.length() > 0.5 else Vector2(0, 1)
+	var away := c - work
+	away = away.normalized() if away.length() > 0.5 else Vector2(0, 1)
 	var radius := Vector2(box.size.x, box.size.z).length() * 0.5
-	var p2 := c + dir * (radius + 7.5)
+	# Clear of everything standing by the day of the lift -- the crane with its
+	# outriggers out needs about 5 m all round. Away from the building first,
+	# then turning round the pieces and stepping out until a spot is free (on
+	# the test project the first guess for the granary was on the boundary wall).
+	var present: Array = []
+	for s in standing:
+		if s.from <= start:
+			present.append(s.box)
+	var dir := away
+	var p2 := c + away * (radius + 7.5)
+	var found := false
+	for dist in [radius + 7.5, radius + 10.0, radius + 13.0, radius + 17.0]:
+		for turn in [0.0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.2, -2.2, PI]:
+			var d: Vector2 = away.rotated(turn)
+			if not _blocked(present, c + d * dist, 5.0, _ground_level):
+				dir = d
+				p2 = c + d * dist
+				found = true
+				break
+		if found:
+			break
 	var pos := Vector3(p2.x, 0, p2.y)
 	pos.y = ground_at(get_tree(), pos, _ground_level)
 	var tangent := Vector2(dir.y, -dir.x)

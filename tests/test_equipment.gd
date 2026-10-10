@@ -249,6 +249,14 @@ func _test_site() -> void:
 	var jobs: Array = plan.mobile.map(func(j): return String(j.parts[0].name))
 	_check("mobile crane: the cross (out of reach) and the granary (after the roof)", jobs, ["C06_Cruceiro_1", "C07_Horreo_1"])
 	_check("street lights need no crane", jobs.has("C08_Farolas_1") or tower_names.has("C08_Farolas_1"), false)
+	for j in plan.mobile:
+		var standing: Array = []
+		for n in sm.building_parts:
+			var w := schedule.get_part_window(n)
+			if w.is_empty() or w.end_day <= j.start:
+				standing.append(SiteEquipment.rest_box(sm.building_parts[n]))
+		_check("mobile crane for %s set up clear of what is built" % j.parts[0].name,
+			SiteEquipment._blocked(standing, Vector2(j.pos.x, j.pos.z), 4.9, 0.0), false)
 	_check("one dig window", plan.digs.map(func(d): return [d.start, d.finish, d.fill]), [[0.0, 10.0, false]])
 
 	var tower: Node3D = eq._tower

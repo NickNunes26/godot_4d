@@ -3,7 +3,33 @@
 Notable changes per release. The design reasoning behind each subsystem lives in the numbered
 docs in this folder; `README.md` is the as-built reference.
 
-## Unreleased
+## 0.7.0
+
+Animation types read from activity names, construction-like animations, clash detection that
+ignores designed contact, and site equipment: a tower crane, a mobile crane, an excavator (to
+Caterpillar's published 320 measurements) and a truck that come and go with the schedule. Tested
+with Godot 4.6.2 and 4.7.2: 510 checks in nine headless suites, plus the site equipment run on
+the test project's real, levelled terrain. Each item below.
+
+**Upgrading from 0.6.0.**
+- **Machines appear on Play.** `SequenceManager.auto_equipment` is on by default, so a scene with
+  no `SiteEquipment` now gets one at runtime. Untick **Auto Equipment** on the SequenceManager to
+  turn it off. A scene that already has a `Crane` of its own gets no tower crane.
+- **Nothing to re-import.** Existing schedules keep their types; **Auto types** in the dock
+  re-reads them from the activity names when you want it to.
+- **The guides gained a section.** *Site equipment* / *Maquinaria de obra* is section 10;
+  *Play*, *Record a video* and *Troubleshooting* moved to 11–13.
+
+**Machines stand on the graded ground, clear of what is built** (`equipment/site_equipment.gd`,
+`tests/test_equipment.gd`). Checked end to end on the test project with its downloaded terrain
+levelled from the model (pad and pit). Every machine stands exactly on the terrain surface, and
+the truck follows it over its whole round. Two placements were wrong and are fixed. **The
+excavator** stood 4 m off the drawn edge of the dig, which on the 5 m terrain grid was 1.6 m down
+the pit's bank. It now steps out a metre at a time until its whole track length is on the pad.
+**The mobile crane** for the granary set up on top of the boundary wall, which was built by then:
+its spot only avoided the pieces it was lifting. It now turns round the pieces and steps out until
+it is 5 m clear of everything standing on the day of the lift, and it lifts the granary over the
+wall from outside. 2 new checks.
 
 **Excavator to Caterpillar's published measurements, with a real bucket**
 (`equipment/equipment_models.gd`, `equipment/equipment_specs.gd`,
