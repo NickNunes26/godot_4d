@@ -96,6 +96,10 @@ func scrub_to(target_day: float, retract_crane: bool = true) -> void:
 			crane.retract()
 		if get_tree():
 			get_tree().call_group("fill_up_particles", "queue_free")
+	# Site plant comes and goes with its activities. After the retract above,
+	# so a crane following a piece picks it straight back up.
+	if is_inside_tree():
+		SiteEquipment.update_all(get_tree(), _schedule, current_day, _building_parts)
 
 ## Resumes time advancement; _process() takes over from here.
 func play() -> void:
@@ -164,28 +168,31 @@ func scan_collisions(sample_step: float = 0.01) -> Array:
 	# through every 0.01 day to prove it takes minutes on a large model.
 	if not _schedule.has_install_parts():
 		return []
-	var date_range = _schedule.get_date_range()
 	var saved_day = current_day
 
 	# pair_key ("A|B", A < B) -> {part1, part2, days: Array[float]}
 	var hits_by_pair: Dictionary = {}
 
-	var day = date_range.min_day
-	var reached_max = false
-	while true:
-		scrub_to(day, false)
-		for c in _schedule.get_collisions(day, _building_parts):
-			var pair_key = (c.part1 + "|" + c.part2) if c.part1 < c.part2 else (c.part2 + "|" + c.part1)
-			if not hits_by_pair.has(pair_key):
-				hits_by_pair[pair_key] = { "part1": c.part1, "part2": c.part2, "days": [] }
-			hits_by_pair[pair_key].days.append(day)
+	# Only the days some install part is in transit: nothing else is ever a
+	# mover, and stepping every part through the rest of the schedule at this
+	# resolution is what made a scan take minutes on a few hundred parts.
+	for window in _schedule.get_install_windows():
+		var day: float = window[0]
+		var reached_end = false
+		while true:
+			scrub_to(day, false)
+			for c in _schedule.get_collisions(day, _building_parts):
+				var pair_key = (c.part1 + "|" + c.part2) if c.part1 < c.part2 else (c.part2 + "|" + c.part1)
+				if not hits_by_pair.has(pair_key):
+					hits_by_pair[pair_key] = { "part1": c.part1, "part2": c.part2, "days": [] }
+				hits_by_pair[pair_key].days.append(day)
 
-		if reached_max:
-			break
-		day += sample_step
-		if day >= date_range.max_day:
-			day = date_range.max_day
-			reached_max = true
+			if reached_end:
+				break
+			day += sample_step
+			if day >= window[1]:
+				day = window[1]
+				reached_end = true
 
 	scrub_to(saved_day, false)
 

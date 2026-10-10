@@ -5,7 +5,8 @@
 
 **Release 0.4.0** is the first standalone, self-contained addon. Layout: `core/` (schedule maths,
 animations, collision, formwork), `runtime/` (SequenceManager, controller, UI, cranes, cameras),
-`editor/` (dock, inspector, CSV/XML I/O), `ifc/` (optional IFC import), `examples/`, `tests/`.
+`editor/` (dock, inspector, CSV/XML I/O), `ifc/` (optional IFC import), `examples/`, `tests/`;
+later `geo/`, `terrain/` (0.5.0) and `equipment/` (site plant, 2026-10-10).
 The history below ("Phase 1/2/3") describes the original build order; `09_GENERICIZATION.md`
 records the generalisation work.
 
@@ -38,6 +39,15 @@ asset, or taken from the scene's own geometry. **Steps 1–5 of its six-step bui
 built**, so it is authorable from the dock; only the generator rule is open. See
 "Formwork (encofrado)" below for what works today.
 
+**Animation types are inferred from activity names, and the animations were reworked for
+realism** (2026-10-10) — `TaskClassifier`, the `build_up` type, `drop_in` lowered from just
+above instead of falling 15 m, `scale_up` growing from its base without overshoot, fades that
+respect a material's own transparency, and clash detection that ignores designed contact. See
+`11_TYPES_REALISM_CLASHES.md`; this file's sections below carry short as-built notes pointing
+there. **Site equipment** followed the same day: a tower crane, a mobile crane, an excavator and a
+truck, generated procedurally, placed from the model and brought on and off site by the schedule,
+with no setup (`13_SITE_EQUIPMENT.md`, `equipment/`). **What's next is in `12_FUTURE_WORK.md`.**
+
 See `CHANGELOG.md` for a session-by-session log of
 what changed and why, `02_ROADMAP_MILESTONES.md` for the
 Phase 1 milestone history, and the other files in this folder for the original design
@@ -63,6 +73,10 @@ this folder.
 | `07_FORMWORK.md` | Formwork (encofrado) spec — decisions + build order; steps 1–5 + 7 built |
 | `08_POUR_STREAM.md` | Concrete pour stream — making it optional and tunable |
 | `09_GENERICIZATION.md` | Generalisation status — what was made generic, what was left, what is open |
+| `10_TERRAIN.md` | Terrain download, placement, levelling, the date's sun |
+| `11_TYPES_REALISM_CLASHES.md` | Type inference from activity names, the animation set (`build_up`, reworked `drop_in` / `scale_up` / fades), clash-detection fixes, bottom-up placement |
+| `12_FUTURE_WORK.md` | **The to-do list**: robust scaffolding/formwork, support equipment (built, see `13`), smaller open items |
+| `13_SITE_EQUIPMENT.md` | Site equipment: procedural tower crane, mobile crane, truck and excavator; placement from the model; presence and motion from the schedule |
 | `CHANGELOG.md` | Notable changes per release |
 
 ## What this is
@@ -77,7 +91,9 @@ snaps instantly to its state on that day, or hit Play to watch construction unfo
    `SequenceManager` node with `runtime/sequence_manager.gd` attached, a container of named
    parts as its child at `parts_container_path` (`@export NodePath`, **required, no
    default** — point it at whatever node holds your model's parts), and
-   optionally any number of sibling `crane.gd`-scripted nodes, auto-discovered.
+   optionally any number of sibling `crane.gd`-scripted nodes, auto-discovered. With none,
+   `SiteEquipment` adds a tower crane (plus a mobile crane, excavator and truck) at Play — see
+   `13_SITE_EQUIPMENT.md`.
    **Loading parts from an IFC file instead of a `.glb`?** The container that
    `parts_container_path` expects doesn't exist until the GDIFC dock's import builds it
    (the dock's **Load IFC (4D)** button, which needs the separate GDIFC addon enabled in
@@ -234,6 +250,10 @@ contracts.
 
 ## Multi-crane support
 
+> **Since 2026-10-10** a scene with no crane of its own gets one: `SiteEquipment` builds a tower
+> crane that runs `crane.gd` with a `PickupZone` laydown, so everything below applies to it
+> unchanged. See `13_SITE_EQUIPMENT.md`.
+
 Any number of `Crane`-scripted nodes can exist in one scene — built for bridge-style
 projects (diagonal beams, spans far enough apart that one crane can't reasonably reach
 all of them), where a single fixed crane was never going to be enough. `crane.gd` itself
@@ -341,6 +361,17 @@ capture.
 
 ## Collision detection (Phase 2, complete except crane geometry)
 
+> **As-built update (2026-10-10)** — what counts as a clash changed; the mechanism below did not.
+> A mover's hits are now ignored against parts it already touches or overlaps **in the finished
+> model** (designed contact, computed once from every part's `original_transform`), the mover's
+> hull is inset by `CONTACT_TOLERANCE` (2 cm), near-zero-scale parts are treated as absent (Jolt
+> would check them at full size), `install_ground_start` is a **local** position (it was a world
+> point applied as local, so lifts in an offset container started underground), results are no
+> longer capped, staggered pieces are placed bottom-up, and the full scan samples only
+> `get_install_windows()`. On the 663-part test model with its stone pieces craned in: 189 clash
+> windows / 39 activity pairs → 79 / 16, scan 159 s → 2.4 s. Details and measurements in
+> `11_TYPES_REALISM_CLASHES.md`, section 3.
+
 `ConstructionSchedule.get_collisions(day, building_parts)` flags parts actively
 mid-`install` (0 < progress < 1 — lifting/sliding/lowering) whose actual mesh
 geometry overlaps any other currently-present part's actual mesh geometry, using
@@ -446,7 +477,8 @@ are clashing, so without disabling depth testing they'd typically be fully hidde
 behind whatever they're marking.
 
 **Full-schedule scan**: `TimelineController.scan_collisions(sample_step = 0.01)` steps
-through the *entire* date range (not just the current day), collecting every
+through every window in which an install part is in transit (`get_install_windows()`; it used to
+walk the *entire* date range), collecting every
 collision and merging consecutive hits on the same part-pair into
 `{part1, part2, start_day, end_day}` windows — a report of every collision in the
 project instead of having to scrub around hoping to spot one live. It teleports every
@@ -645,7 +677,8 @@ node deletion, so this is safe to call from inside the very `LineEdit`'s own sig
 
 **Type** — an `OptionButton` listing every built-in animation
 (`AnimationApplier.TYPES` — `scale_up`, `drop_in`, `rise_up`, `sink_down`, `fill_up`,
-`fade_in`, `fade_out`, `install`; see `animation_applier.gd`), so an action's `type`
+`build_up`, `fade_in`, `fade_out`, `install`; see `animation_applier.gd`, and
+`11_TYPES_REALISM_CLASHES.md` for what each looks like and which work it suits), so an action's `type`
 field can be set without hand-editing JSON. `TYPES` is a single source of truth shared
 between the dock's dropdown and `AnimationApplier.apply()`/`apply_instant()`'s own
 `match` statements, so the dropdown can't drift out of sync with what's actually
@@ -659,7 +692,7 @@ The dropdown's visible labels are **cosmetic Spanish translations**
 (`ScheduleInspector`'s `_TYPE_DISPLAY_NAMES`), not the values actually read/written —
 `scale_up`→"Aparecer", `drop_in`→"Caer", `rise_up`→"Subir", `sink_down`→"Bajar",
 `fill_up`→"Hormigonar" (concrete pour — matches what that animation actually depicts),
-`fade_in`→"Emerger", `fade_out`→"Desvanecer", `install`→"Instalar". Requested because
+`build_up`→"Levantar", `fade_in`→"Emerger", `fade_out`→"Desvanecer", `install`→"Instalar". Requested because
 most of the authoring crew doesn't read English and names like "scale_up"/"drop_in"
 convey nothing on their own. Purely presentational: each dropdown item stores the real
 English key as its metadata (`OptionButton.set_item_metadata()`) and that's what
@@ -1016,6 +1049,12 @@ survives* — it is a plain field, not an inferred default.
 
 A model that is entirely cast in-situ therefore batches every action and contains no
 `install`/`drop_in`; those entries exist for precast work.
+
+> **As-built update (2026-10-10).** When `TaskClassifier` decides an action's type (no type
+> stated by the model), it also decides `batch` per kind of work — planting, windows, stone
+> pieces and framing one by one; pours, masonry, earthworks together — instead of
+> `batch_for()`. The dock's **Auto types** button does the same for a loaded schedule. See
+> `11_TYPES_REALISM_CLASHES.md`.
 
 **Play and scrub agree**, which is the failure mode worth guarding against here — a pour
 that rises together during Play but staggers while scrubbing would be a subtle and ugly
@@ -1692,6 +1731,10 @@ Python's `date.weekday()` is 0=Monday — an off-by-one there produces dates tha
 entirely plausible and are silently wrong.
 
 ## Next features
+
+> **The to-do list now lives in `12_FUTURE_WORK.md`**: robust scaffolding/formwork, support
+> equipment (tower crane, mobile crane, truck, excavator) and the smaller open items. The list
+> below is kept for its history; where they overlap, `12_FUTURE_WORK.md` is current.
 
 **All five features specified in `06_PLANNED_FEATURES.md` are built** — calendar dates,
 static/excluded geometry, Movie Maker Mode, per-action cadence, and camera keyframes. That

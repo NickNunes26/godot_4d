@@ -35,6 +35,7 @@ const _TYPE_DISPLAY_NAMES := {
 	"rise_up": "Subir",
 	"sink_down": "Bajar",
 	"fill_up": "Hormigonar",
+	"build_up": "Levantar",
 	"fade_in": "Emerger",
 	"fade_out": "Desvanecer",
 	"install": "Instalar",

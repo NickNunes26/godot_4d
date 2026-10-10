@@ -384,7 +384,7 @@ static func platforms_from_model(container: Node3D, actions: Array, margin := 0.
 
 ## A part's box in the container's space at its rest placement. While a
 ## timeline runs (Play, or the dock's preview) parts sit wherever their
-## animation starts -- 10 m under for rise_up, 15 m up for drop_in, scale 0 for
+## animation starts -- 10 m under for rise_up, a few metres up for drop_in, scale 0 for
 ## scale_up -- and SequenceManager keeps the real placement in these metas.
 static func _rest_aabb(part: Node3D, container: Node3D) -> AABB:
 	if part.get_parent() != container or not part.has_meta("original_pos") or not part.has_meta("original_scale"):

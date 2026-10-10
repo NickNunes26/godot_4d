@@ -164,6 +164,11 @@ text = "⚠ Schedule out of date — click Recalculate to update the 3D preview 
 [node name="InspectorButtons" type="HFlowContainer" parent="VBox"]
 layout_mode = 2
 
+[node name="InferTypesButton" type="Button" parent="VBox/InspectorButtons"]
+layout_mode = 2
+disabled = true
+text = "Auto types"
+
 [node name="RecalculateButton" type="Button" parent="VBox/InspectorButtons"]
 layout_mode = 2
 disabled = true

@@ -16,12 +16,19 @@ para verlo construirse, o graba un vídeo para compartirlo.
   planificación en directo en la vista 3D (**Start Preview**).
 - **Schedules / Planificación**: from IFC properties, Microsoft Project XML or CSV, edited in an
   inspector grid / desde propiedades IFC, XML de Microsoft Project o CSV, editable en una tabla.
-- **Animations / Animaciones**: `scale_up`, `drop_in`, `rise_up`, `sink_down`, `fill_up` (concrete
-  pour / hormigonado), `fade_in`, `fade_out`, `install` (crane / grúa).
+- **Animations / Animaciones**: `fill_up` (concrete pour / hormigonado), `build_up` (masonry /
+  mampostería), `drop_in`, `sink_down`, `fade_in`, `fade_out`, `scale_up`, `rise_up`, `install`
+  (crane / grúa) -- **inferred from each activity's name** / **deducidas del nombre de cada
+  actividad** ("Hormigonado de zapatas" → `fill_up`, "Mampostería" → `build_up`).
 - **Terrain / Terreno**: real elevation and aerial photos around the model (Spain 5 m / 25 cm,
   elsewhere elevation only), levelled pads and excavations tied to the earthworks, and the sun of
   the date / elevación y ortofotos reales (España 5 m / 25 cm; resto del mundo, solo elevación),
   explanaciones y excavaciones ligadas al movimiento de tierras, y el sol de cada fecha.
+- **Site equipment / Maquinaria**: a tower crane, a mobile crane, an excavator and a truck appear
+  on their own and come and go with the activities -- the crane lowers the stone pieces, the
+  excavator loads the truck at the dig / una grúa torre, una grúa autopropulsada, una excavadora y
+  un camión aparecen solos y entran y salen con las actividades: la grúa baja las piezas de piedra
+  y la excavadora carga el camión en la excavación.
 - **Also / Además**: formwork and scaffolding, crane lifts with clash detection, camera keyframes,
   one-command video recording / encofrados y andamios, izados con grúa y detección de colisiones,
   fotogramas clave de cámara, grabación de vídeo con un comando.
@@ -118,7 +125,16 @@ Después conviértelo en un MP4 ligero con
 - **Formwork / Encofrados**: neither IFC nor Project XML can carry formwork or scaffolding that is
   put up and struck; set it up in the Schedule Inspector (guide, section 9). / ni el IFC ni el XML
   de Project describen encofrados ni andamios que se montan y desmontan; se configuran en el
-  Schedule Inspector (guía, apartado 9).
+  Schedule Inspector (guía, apartado 9). Scaffolding still needs JSON editing and is lost on
+  regeneration; a proper rework is planned ([docs/12_FUTURE_WORK.md](docs/12_FUTURE_WORK.md)). /
+  Los andamios aún requieren editar el JSON y se pierden al regenerar; está prevista una revisión
+  a fondo.
+- **Site equipment / Maquinaria**: broad-strokes models, one of each; visual only (not
+  clash-checked); the tower crane follows `drop_in` pieces from just above their place rather than
+  fetching them from the laydown area ([docs/13_SITE_EQUIPMENT.md](docs/13_SITE_EQUIPMENT.md)). /
+  modelos a grandes rasgos, uno de cada; solo visuales (sin comprobación de colisiones); la grúa
+  torre sigue las piezas `drop_in` desde justo encima de su sitio, sin ir a buscarlas a la zona de
+  acopio.
 - **Dates / Fechas**: IFC dates must be ISO (`YYYY-MM-DD`). / las fechas del IFC deben ir en
   formato ISO (`AAAA-MM-DD`).
 - **Imagery / Ortofotos**: aerial photos only for mainland Spain and the Balearics; elsewhere
@@ -128,14 +144,20 @@ Después conviértelo en un MP4 ligero con
 - **Levelling / Explanación**: follows the 5 m terrain grid, so pads come out up to 7 m wider than
   drawn, and collision uses the finished ground. / sigue la malla de 5 m del terreno, así que las
   plataformas salen hasta 7 m más anchas de lo dibujado, y la colisión usa el terreno final.
-- **Scale / Escala**: animation offsets (drop height, rise depth, crane heights) are fixed metres
-  tuned for buildings. / los desplazamientos de las animaciones (altura de caída, profundidad,
-  alturas de grúa) son metros fijos pensados para edificios.
+- **Scale / Escala**: `drop_in` scales its height to each piece (2.5–8 m), but the rise and sink
+  depths and crane heights are fixed metres tuned for buildings. / `drop_in` ajusta su altura a
+  cada pieza (2,5–8 m), pero la profundidad de subida y bajada y las alturas de grúa son metros
+  fijos pensados para edificios.
 - **Timing / Ritmo**: the elements of an action appear along one continuous curve over its whole
   window, not grouped per day. / los elementos de una actividad aparecen a lo largo de una curva
   continua en toda su duración, no agrupados por días.
-- **Collisions / Colisiones**: only crane lifts (`install`) are checked. / solo se comprueban los
-  izados con grúa (`install`).
+- **Collisions / Colisiones**: only crane lifts (`install`) are checked, along a fixed path (up,
+  across, straight down onto the piece's place); contact the finished model already has is not
+  reported. / solo se comprueban los izados con grúa (`install`), por una trayectoria fija (subir,
+  trasladar, bajar en vertical); el contacto que ya existe en el modelo terminado no se informa.
+- **Type inference / Deducción de tipos**: keyword-based (ES, GL, PT, EN); a name it doesn't know
+  keeps the fallback type. / por palabras clave (ES, GL, PT, EN); un nombre que no conoce se queda
+  con el tipo por defecto.
 - **Labels / Etiquetas**: the dock mixes Spanish and English labels; tooltips give the English
   field names. / el panel mezcla etiquetas en español e inglés; las ayudas emergentes dan el nombre
   del campo en inglés.
@@ -155,6 +177,7 @@ core/      schedule maths, animations, collision, formwork (no scene assumptions
 geo/       UTM, IFC georeference, the model's map origin, sun position
 terrain/   terrain providers, download + build, terrain node, levelling, ground shader
 runtime/   SequenceManager, timeline controller + UI, cranes, cameras, GeoSun
+equipment/ site plant: procedural tower crane, mobile crane, truck, excavator
 editor/    the dock, inspector, CSV / Project XML import-export
 ifc/       IFC import: property scan, mapping, adapter, schedule generator
 examples/  demo scene + annotated schedule
@@ -167,13 +190,19 @@ Headless tests (none use the network):
 ```
 godot --headless --path . --editor --quit        # once, so class names register
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_ifc_mapping.gd
+godot --headless --path . --script res://addons/construction_4d_tool/tests/test_task_classifier.gd
+godot --headless --path . --script res://addons/construction_4d_tool/tests/test_collisions.gd
+godot --headless --path . --script res://addons/construction_4d_tool/tests/test_animations.gd
+godot --headless --path . --script res://addons/construction_4d_tool/tests/test_equipment.gd
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_geo.gd
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_terrain.gd
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_ifc_georef_gdifc.gd   # needs GDIFC
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_ifc_scene_models.gd   # import part needs GDIFC
 ```
 
-Start with [docs/README.md](docs/README.md) (how it all works), [docs/04_API_REFERENCE.md](docs/04_API_REFERENCE.md)
+Start with [docs/README.md](docs/README.md) (how it all works),
+[docs/11_TYPES_REALISM_CLASHES.md](docs/11_TYPES_REALISM_CLASHES.md) (type inference, animations,
+clash detection), [docs/12_FUTURE_WORK.md](docs/12_FUTURE_WORK.md) (the to-do list), [docs/04_API_REFERENCE.md](docs/04_API_REFERENCE.md)
 (classes and methods), [docs/05_IFC_INTEGRATION.md](docs/05_IFC_INTEGRATION.md) (IFC import) and
 [docs/CHANGELOG.md](docs/CHANGELOG.md). Some of `docs/` still carries historical prose from the
 original build order.

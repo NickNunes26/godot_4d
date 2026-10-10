@@ -9,7 +9,9 @@
 > **Module layout (0.4.0):** `core/` holds the schedule maths, animation, collision and formwork
 > classes; `runtime/` the scene-facing nodes and UI; `editor/` the dock; `ifc/` the optional IFC
 > import. File names in the class contracts below map as `<name>.gd` -> `core/` or `runtime/`
-> (see `09_GENERICIZATION.md`, "Path mapping").
+> (see `09_GENERICIZATION.md`, "Path mapping"). `equipment/` (2026-10-10) holds the procedural
+> site plant, `EquipmentModels` and `SiteEquipment`; it reads the schedule and is driven from
+> `TimelineController.scrub_to()` like the terrain (`13_SITE_EQUIPMENT.md`).
 
 ## System Overview Diagram
 
@@ -152,10 +154,23 @@ where `progress ∈ [0, 1]` represents how far through the animation we are.
 - **Mid** (progress 0–1): interpolate `part.scale` from `ZERO` to `original_scale` with `TRANS_BACK` + `EASE_OUT`
 - **End**: `part.visible = true`, `part.scale = original_scale`
 
+> **As-built (2026-10-10):** uniform growth with the middle of the part's **base pinned**
+> (`_base_pin_offset()`), `TRANS_SINE` + `EASE_OUT`, never larger than finished. `TRANS_BACK`
+> overshot to ~110 % and, about the node origin (an IFC part's bounding-box centre), inflated the
+> part in mid-air. See `11_TYPES_REALISM_CLASHES.md`.
+
 ##### `drop_in`
 - **Start**: `part.visible = false`, `part.position = original_pos + Vector3(0, 15, 0)` (high up)
 - **Mid** (0–1): interpolate `part.position.y` from `original_pos.y + 15` to `original_pos.y` with `TRANS_CUBIC` + `EASE_OUT` (settles without rebounding)
 - **End**: `part.visible = true`, `part.position = original_pos`
+
+> **As-built (2026-10-10):** lowered from `drop_height(part)` = 1.5 m + 1.5 × the part's height,
+> clamped to [2.5 m, 8 m], with `TRANS_SINE` + `EASE_IN_OUT`, fading in over the first 20 % of
+> the window. The fixed 15 m cubic ease-out was fastest at the top and appeared out of nothing.
+
+##### `build_up` *(added 2026-10-10)*
+- Same as `fill_up` below — grows in Y from its pinned base — without the pour stream. For
+  masonry and scaffolding, which `rise_up` used to push up through the slab from 10 m below.
 
 ##### `rise_up`
 - **Start**: `part.visible = false`, `part.position = original_pos - Vector3(0, 10, 0)` (below ground)
@@ -184,6 +199,10 @@ where `progress ∈ [0, 1]` represents how far through the animation we are.
 - **Start**: `part.visible = true`, `material.albedo_color.a = 1.0`
 - **Mid** (0–1): interpolate `material.albedo_color.a` from `1.0` to `0.0`
 - **End**: `part.visible = false`, `material.albedo_color.a = 0.0`
+
+> **As-built (2026-10-10), both fades:** alpha runs to and from each material's **own** original
+> alpha (glass stays glass), on every surface of every mesh, and the original transparency mode
+> comes back at full opacity (`_set_opacity()`). `fade_in` is hidden until it starts.
 
 ##### `install` (3-phase: lift 30%, slide 40%, lower 30%)
 - **Start**: `part.visible = true`, `part.scale = original_scale`, `part.position = ground_start` (15 units away, ground level)

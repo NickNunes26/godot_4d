@@ -27,6 +27,7 @@ Quick reference for all public APIs in the 4D Construction Tool. For implementat
 - [IFC classes](#ifc-classes-ifc)
 - [Georeference classes](#georeference-classes-geo) *(0.5.0)*
 - [Terrain classes](#terrain-classes-terrain) *(0.5.0; levelled platforms 0.6.0)*
+- [Site equipment classes](#site-equipment-classes-equipment) *(2026-10-10)*
 - [Data Types](#data-types)
 
 ---
@@ -213,6 +214,12 @@ Exists so the Phase 3 inspector can show a **Depends On** row's *actually resolv
 
 **Throws**: Never
 
+#### `get_part_window(part_name: String) -> Dictionary` *(2026-10-10)*
+
+`{start_day, end_day, anim_type}` for one scheduled part, or `{}`. `SiteEquipment` uses it to
+decide which crane lowers which piece and when. The member `source_data` holds the parsed JSON the
+schedule was built from (read-only).
+
 ---
 
 #### `day_to_date_string(day: float) -> String`
@@ -272,13 +279,14 @@ static func start_date_from_end_and_duration(end_date: String, duration_days: fl
 ### Animation Types
 
 Supported animation types:
-- `"scale_up"` — grow from zero scale to full size
-- `"drop_in"` — fall from above
+- `"scale_up"` — grow uniformly from zero to full size with the middle of the base pinned; no overshoot
+- `"drop_in"` — lowered onto its place from `drop_height(part)` above (1.5 m + 1.5 × part height, within [2.5, 8] m), fading in over the first `DROP_FADE` (20 %)
 - `"rise_up"` — rise from below
 - `"sink_down"` — descend below ground
 - `"fill_up"` — grow in Y while keeping bottom pinned (with particle effects in live mode)
-- `"fade_in"` — fade alpha from 0 to 1
-- `"fade_out"` — fade alpha from 1 to 0
+- `"build_up"` — the same growth from the base, without the pour (masonry, scaffolding)
+- `"fade_in"` — fade from 0 to the material's own alpha (hidden until it starts)
+- `"fade_out"` — fade from the material's own alpha to 0, then hidden
 
 Both fades walk **descendant** `MeshInstance3D`s when the part itself isn't one, so a composite part (a `.glb` instance, e.g. a formwork tier-2 panel asset) fades instead of popping. They previously returned early on anything that wasn't a `MeshInstance3D`, so this is additive — see `07_FORMWORK.md`, decision 7.
 - `"install"` — 3-phase lift/slide/lower (used for crane-assisted installation)
@@ -286,6 +294,13 @@ Both fades walk **descendant** `MeshInstance3D`s when the part itself isn't one,
 Plus one type `apply_instant()` handles that is **not** in `TYPES`, and deliberately so:
 
 - `"formwork"` — a formwork part's assemble → hold → strip lifecycle, mapped onto one 0–1 window with per-panel boundaries in a `formwork_phases` meta. Assigned by `ConstructionSchedule._schedule_formwork()`, never authored. It stays out of `TYPES` because `TYPES` is what the dock's dropdown offers for an *element*, and setting a pier's type to `formwork` would read a phase meta off a part that has none. What an author picks is `formwork.type` / `formwork.strip_type`, both ordinary entries above, which this composes. See `README.md`, "Formwork (encofrado)"
+
+Constants (2026-10-10): `DROP_MIN` 2.5, `DROP_MAX` 8.0, `DROP_PER_METRE` 1.5, `DROP_CLEARANCE`
+1.5, `DROP_FADE` 0.2. `static drop_height(part: Node3D) -> float`. Fades go through
+`_set_opacity(part, fraction)`, which records each material's original alpha and transparency
+on the material (`_c4d_original_alpha`, `_c4d_original_transparency`). The live versions of
+`scale_up`, `drop_in`, `fade_in` and `fade_out` drive the instant functions via
+`tween_method`, so Play and scrubbing match exactly.
 
 ### Methods
 
@@ -438,6 +453,7 @@ Jump to a specific day and apply all parts' states at that moment. **Used for bo
 6. If the schedule has calendar dates, `GeoSun.update_all()` points every `GeoSun` at that date
 7. `ConstructionTerrain.update_all()` blends every terrain's levelled platforms to their progress on that day
 8. If `retract_crane`, calls `retract()` on **every** crane in `_cranes`
+9. `SiteEquipment.update_all()` brings the site plant to that day (after step 8, so a crane following a piece picks it straight back up)
 
 **Side effects**:
 - All parts instantly assume their state at `target_day`
@@ -698,6 +714,7 @@ ui.set_timeline_controller(controller, schedule)
 @export var parts_container_path: NodePath = NodePath()
 @export var extra_part_containers: Array[NodePath] = []
 @export var crane_paths: Array[NodePath] = []
+@export var auto_equipment: bool = true
 
 @export_group("Movie Maker Mode")
 @export var movie_mode_override: bool = false
@@ -709,6 +726,7 @@ ui.set_timeline_controller(controller, schedule)
 - `parts_container_path` — the child node whose **direct children** are the parts. **Required, no default**: point it at whatever node holds your model's parts. An unset path logs an error and a missing node a warning, but neither stops — the rest of `_ready()` still runs
 - `extra_part_containers` — optional further nodes (relative to this one) whose direct children are also parts, e.g. props or safety elements outside the main model
 - `crane_paths` — optional explicit override. Leave empty (the default) to auto-discover every `Crane`-scripted node in the scene instead; see `_resolve_cranes()`
+- `auto_equipment` — at Play, a scene with no `SiteEquipment` gets one (tower crane, mobile crane, excavator, truck). A `SiteEquipment` added from the dock is used either way. See `13_SITE_EQUIPMENT.md`
 - `movie_mode_override` — force movie mode on without actually recording, so a recording's behaviour can be checked in a plain Play session
 - `movie_duration_sec` — how long day 0 → last day should take. Playback speed is derived from this and the schedule's span; the finished video is this plus `movie_end_hold_sec`. A target outside `set_speed()`'s `[0.1, 10.0]` range is warned about, not silently delivered as a different length
 - `movie_end_hold_sec` — seconds to hold on the finished structure before quitting
@@ -824,6 +842,7 @@ func _ready():
   load_json()
   _generate_formwork()
   initialize_parts()
+  SiteEquipment.ensure(self, auto_equipment)  # site plant; its tower crane is a Crane
   _cranes = _resolve_cranes()    # crane_paths override, else auto-discovery
   if _cranes.is_empty():
     push_warning("SequenceManager: no crane found in the scene")
@@ -1014,7 +1033,7 @@ func query(building_parts: Dictionary, states: Dictionary,
            sibling_groups: Dictionary, part_to_commander: Dictionary) -> Array
 ```
 
-Not called directly by application code — `ConstructionSchedule.get_collisions()` is the public entry point. Registers raw `PhysicsServer3D` areas (no `Area3D` scene nodes), freed on `NOTIFICATION_PREDELETE`. Design rationale lives in `README.md`'s "Collision detection" section, deliberately in one place rather than duplicated here.
+Not called directly by application code — `ConstructionSchedule.get_collisions()` is the public entry point. The mover's convex hull is inset by `CONTACT_TOLERANCE` (0.02 m); pairs that already overlap with every part at its `original_transform` ("designed contact") are computed once on the first query and never reported; parts whose basis determinant is below `1e-6` are treated as absent. Registers raw `PhysicsServer3D` areas (no `Area3D` scene nodes), freed on `NOTIFICATION_PREDELETE`. Design rationale lives in `README.md`'s "Collision detection" section, deliberately in one place rather than duplicated here.
 
 ---
 
@@ -1034,6 +1053,8 @@ Phase 3, all under `addons/construction_4d_tool/editor/`. Documented in depth in
 | `ScheduleProjectXmlIO` | `schedule_project_xml_io.gd` | Microsoft Project **XML Interchange** export/import (not the binary `.mpp` format) |
 | `ProjectXmlMappingDialog` | `project_xml_mapping_dialog.gd` | One-time manual task→action mapping for foreign Project files |
 
+The dock's **Maquinaria** button (2026-10-10) calls `SiteEquipment.propose()` on the target `SequenceManager`, stopping any preview first; Stop Preview calls `SiteEquipment.reset_all()`.
+
 `plugin.gd` is the `EditorPlugin` entry point and is deliberately thin — it only instantiates the dock scene and adds it to `DOCK_SLOT_RIGHT_UL` (the upper-right dock, beside GDIFC), naming the node `Build4D` so that is the tab title.
 
 ---
@@ -1048,7 +1069,8 @@ The user's choice of which IFC properties mean what. A property path is an `Arra
 `[property_set, property]`, matched exactly.
 
 - Fields: `element_id`, `start`, `end`, `duration`, `display_name`, `type_source` (paths);
-  `default_type: String` (default `"scale_up"`); `type_rules: Array[{contains, type}]`;
+  `default_type: String` (default `"scale_up"`); `infer_types: bool` (default `true`, also for
+  profiles without the key); `type_rules: Array[{contains, type}]`;
   `ignore_dates: Array[String]`; `last_generated: Dictionary` (`{id: {type, batch}}`).
 - `is_valid() -> bool`, `missing_roles() -> Array[String]` — Element ID, Start, and End-or-Duration are required.
 - `referenced_paths() -> Array`
@@ -1085,8 +1107,21 @@ The user's choice of which IFC properties mean what. A property path is an `Arra
   `SequenceManager.collect_part_nodes()`, i.e. every model). Returns
   a `{steps, static_prefixes, excluded_prefixes}` schedule, or `{}` with an error if the mapping is
   incomplete. Carries forward the two prefix lists and any hand-edited `type`/`batch`. Updates
-  `mapping.last_generated`; save the mapping afterwards.
+  `mapping.last_generated`; save the mapping afterwards. An action's type is, in order: a rule
+  matching the type property, a type property value that is a type name, `TaskClassifier`'s guess
+  from the type value + id + label (when `mapping.infer_types`), `mapping.default_type`.
 - `static read_existing(path) -> Dictionary`, `static write_data(data, path) -> Error`
+
+### `TaskClassifier` (`RefCounted`, static — `core/task_classifier.gd`)
+- `static classify(texts: Variant) -> Dictionary` — `{type, batch, category, keyword}` for the
+  best-matching rule over `texts` (a String or Array, joined), or `{}`. Highest rule priority wins,
+  then the earliest keyword.
+- `static infer_type(texts, fallback := "") -> String`
+- `static action_text(action: Dictionary) -> String` — id/prefixes plus the label part of
+  `comment`, which is what the dock's **Auto types** classifies.
+- `static normalize(text: String) -> String` — lower case, accents folded, CamelCase and
+  non-letters split: `"C10_PilaresPB"` → `"c pilares pb"`.
+- `RULES` — the keyword table; add words or rules there.
 
 ### `IfcMappingDialog` (`ConfirmationDialog`, editor)
 - `setup(scan: Dictionary, initial: IfcMapping, lock_element_id := false)`; signal
@@ -1220,6 +1255,9 @@ See `10_TERRAIN.md`. All coordinates are 64-bit `float`; nothing at map magnitud
 - `GROUP := "construction_terrain"` (joined in `_enter_tree()`).
 - `rebuild()`, `update_placement()`, `grading() -> TerrainGrading` (null with no platforms).
 - `height_at(e, n)` — the levelled ground (every platform complete) when there are platforms.
+- `world_height_at(p: Vector3) -> float` — the same under a world point, as a world Y (NAN with no
+  data); grades the platforms on demand if asked before this node's `_ready()`.
+  `static ground_y(tree, p)` — from the first terrain that answers. Used by `SiteEquipment`.
 - `follow_schedule(schedule, day)` — sets each platform's progress (shader only, no rebuild);
   `show_finished()` — every platform complete.
 - `static update_all(tree, schedule, day)` (called by `TimelineController.scrub_to()`),
@@ -1252,6 +1290,55 @@ See `10_TERRAIN.md`. All coordinates are 64-bit `float`; nothing at map magnitud
 - The dock's Terreno section. `refresh()`, `on_ifc_imported()` (called by the dock after an import).
   Levelling row: **Talud H:V**, **Margen m**, **Nivelar desde el modelo**
   (`TerrainGrading.platforms_from_model()` on the scene's model and schedule), **Terreno natural**.
+
+## Site equipment classes (`equipment/`)
+
+*(2026-10-10 — design, placement rules and measurements in `13_SITE_EQUIPMENT.md`.)*
+
+### `EquipmentModels` (`RefCounted`, static, `@tool`)
+Procedural plant from boxes and cylinders; every model stands on its own origin at ground level,
+vehicles face −Z, one shared material per colour.
+- `tower_crane(height, jib, counter_jib, laydown := Vector3(0, 0, 9), as_crane := false) -> Node3D`
+  — `height` ground to the underside of the jib, `jib` hook reach. Nodes `Mast/Section<i>` (meta
+  `sections` on `Mast`), `Arm` (+X = jib), `Arm/Track`, `Arm/Track/Rope` (Y scale = length in
+  metres), `Arm/Track/Hook`, `PickupZone` (at `laydown`, with a stack of materials). With
+  `as_crane` the root is a `Crane` (runtime/crane.gd).
+- `mobile_crane() -> Node3D` and `pose_mobile_crane(root, slew, luff, extend, outriggers, hook_drop)`
+  — slew radians (0 = over the front), luff radians above horizontal, `extend` 0..1 of the
+  telescope (`BOOM_MIN` 13.0 m → `BOOM_MAX` 41.8 m foot to tip), `outriggers` 0..1, hook drop in
+  metres. `boom_tip(root) -> Vector3` (world, or own space outside a tree).
+- `truck() -> Node3D` and `pose_truck(root, tip, load_level)` — body tip 0..1 (50°), load 0..1.
+- `excavator() -> Node3D` and `pose_excavator(root, slew, boom, stick, bucket, loaded)`;
+  `excavator_teeth(slew, boom, stick, bucket) -> Vector3` (bucket teeth, machine space).
+- `triangle_count(root) -> int`, `material(color) -> StandardMaterial3D`.
+
+### `SiteEquipment` (`Node3D`, `@tool`)
+The site's plant, placed from the model and driven by the schedule.
+- Exported: `tower_crane`, `mobile_crane`, `excavator_and_truck` (bools, default on),
+  `tower_height`, `jib_length` (0 = automatic), `erect_days` (4).
+- Children: saved markers `TowerCraneSite` / `ExcavatorSite` (their transform is where the machine
+  stands) and the generated models (meta `_equipment_generated`, never saved).
+- `GROUP := "site_equipment"`.
+- `static ensure(sequence_manager, create := true) -> SiteEquipment` — the scene's, or a new child
+  of the `SequenceManager` (when `create`), built for a run; null when there is none and `create`
+  is false. Called by `SequenceManager._ready()` with `auto_equipment`.
+- `static propose(sequence_manager, scene_root) -> SiteEquipment` — editor: adds or re-proposes
+  the markers (owned by `scene_root`) and writes the computed `tower_height` / `jib_length`.
+- `build(sequence_manager, runtime: bool)` — builds every enabled machine; missing markers are
+  proposed; `runtime` makes the tower crane a working `Crane`. No tower crane when the scene has
+  a `Crane` of its own (runtime).
+- `static update_all(tree, schedule, day, building_parts)` (called by
+  `TimelineController.scrub_to()`), `follow_schedule(schedule, day, building_parts)`;
+  `static reset_all(tree)` (the dock's Stop Preview), `stop_following()`.
+- `make_plan(schedule, building_parts) -> Dictionary` — `{tower: {on, off, parts: [{name, start,
+  end, kind}]}, mobile: [{start, finish, pos, yaw, parts, aim}], digs: [{start, finish, fill}]}`.
+- Static helpers: `site_context(sequence_manager)` (`{boxes, actions, work_box, dig_box, ground}`),
+  `actions_of(sequence_data, part_names)`, `rest_box(part) -> AABB` (finished placement, world),
+  `robust_box(boxes) -> AABB`, `tower_size(ctx, at, height := 0, jib := 0)`,
+  `ground_at(tree, p, fallback)`, `aim_mobile(crane_tf, target) -> {slew, luff, extend}`,
+  `dig_pose(u) -> {slew, boom, stick, bucket, loaded}`.
+- Constants: `STRUCTURE`, `ROOF`, `DIG`, `FILL`, `LIGHT_LIFTS` (TaskClassifier categories),
+  `TOWER_GRACE_DAYS` (7), `DIG_CYCLE` (11 s), `TRUCK_ROUND` (6 cycles), `TRUCK_SPOT`, `TRUCK_RUN`.
 
 ---
 

@@ -30,8 +30,13 @@ var duration: Array = []
 var display_name: Array = []
 ## Property whose value the `type_rules` are matched against. Optional.
 var type_source: Array = []
-## Animation type for an action no rule matches.
+## Animation type for an action nothing else decides (no rule, no type name in
+## the property, and -- with infer_types -- nothing recognisable in its name).
 var default_type: String = "scale_up"
+## Infer the type from the activity's name and code (TaskClassifier) when the
+## model does not state one. On unless a profile turns it off: an author who
+## wants every unlabelled action to get default_type unchecks it.
+var infer_types: bool = true
 ## Ordered `{"contains": String, "type": String}`; first match wins. Case-insensitive.
 var type_rules: Array = []
 ## Date values to treat as "no date" (placeholders a model uses for "not scheduled").
@@ -114,6 +119,7 @@ func to_dict() -> Dictionary:
 		"display_name": display_name,
 		"type_source": type_source,
 		"default_type": default_type,
+		"infer_types": infer_types,
 		"type_rules": type_rules,
 		"ignore_dates": ignore_dates,
 		"last_generated": last_generated,
@@ -131,6 +137,7 @@ static func from_dict(d: Dictionary) -> IfcMapping:
 	m.default_type = str(d.get("default_type", "scale_up"))
 	if not m.default_type in AnimationApplier.TYPES:
 		m.default_type = "scale_up"
+	m.infer_types = bool(d.get("infer_types", true))
 	var rules = d.get("type_rules")
 	if rules is Array:
 		for r in rules:

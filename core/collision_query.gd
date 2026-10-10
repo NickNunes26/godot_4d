@@ -45,9 +45,27 @@ extends RefCounted
 # Bit 20 is arbitrary but unlikely to collide with anything else in use.
 const _COLLISION_LAYER: int = 1 << 19
 
+## How far a moving part may graze another before it counts, in metres. A piece
+## lowered onto its bearing ends with faces exactly coincident, and IFC models
+## routinely carry millimetre overlaps where elements meet; at zero tolerance
+## both read as clashes. Applied by insetting the mover's query hull.
+const CONTACT_TOLERANCE := 0.02
+
+## A part whose transform is this close to singular is not physically there yet
+## (scale_up/fill_up at progress ~0). Jolt replaces a singular basis with
+## identity -- i.e. treats the part as *full size* -- so it must be skipped,
+## not synced.
+const _MIN_BASIS_DET := 1e-6
+
 var _collision_shapes: Dictionary = {} # part_name -> {area_rid: RID, convex_shape: ConvexPolygonShape3D, concave_shape: ConcavePolygonShape3D}
 var _area_rid_to_part: Dictionary = {} # RID -> part_name
 var _space_rid: RID
+## mover part_name -> {other part_name: true} for every part it already touches
+## or overlaps in the *finished* model. Built once, lazily, on the first query()
+## (the physics space is not always queryable at setup time). See
+## _build_designed_contacts().
+var _designed_contacts: Dictionary = {}
+var _designed_contacts_ready := false
 
 func setup(building_parts: Dictionary) -> void:
 	var any_node: Node3D = null
@@ -77,6 +95,8 @@ func setup(building_parts: Dictionary) -> void:
 			continue
 		var convex_shape: ConvexPolygonShape3D = node.mesh.create_convex_shape(true, false)
 		var concave_shape: ConcavePolygonShape3D = node.mesh.create_trimesh_shape()
+		if convex_shape and not convex_shape.points.is_empty():
+			convex_shape.points = _inset(convex_shape.points, CONTACT_TOLERANCE)
 		if not convex_shape or convex_shape.points.is_empty() or not concave_shape:
 			push_warning("CollisionQuery: could not build a collision shape for '%s', skipped" % part_name)
 			continue
@@ -94,6 +114,26 @@ func setup(building_parts: Dictionary) -> void:
 		}
 		_area_rid_to_part[area_rid] = part_name
 
+## The hull pulled in towards its own centre by `tol` on each axis (never below
+## 10% of its size, so a pane of glass thinner than 2*tol keeps a body). Per axis
+## rather than along normals, which is exact for the boxes most building parts
+## are and close enough for the rest.
+static func _inset(points: PackedVector3Array, tol: float) -> PackedVector3Array:
+	var box := AABB(points[0], Vector3.ZERO)
+	for p in points:
+		box = box.expand(p)
+	var c := box.get_center()
+	var half := box.size * 0.5
+	var f := Vector3.ONE
+	for i in 3:
+		if half[i] > 0.0:
+			f[i] = maxf(0.1, (half[i] - tol) / half[i])
+	var out := PackedVector3Array()
+	out.resize(points.size())
+	for i in points.size():
+		out[i] = c + (points[i] - c) * f
+	return out
+
 ## Raw PhysicsServer3D RIDs aren't owned by any scene node, so nothing else
 ## frees them -- do it ourselves right before this RefCounted is destroyed,
 ## otherwise they leak at the engine level for the app's lifetime (e.g. every
@@ -108,7 +148,10 @@ func _notification(what: int) -> void:
 
 ## Phase 2: flags parts actively being installed (anim_type "install",
 ## 0 < progress < 1 -- mid lift/slide/lower) whose actual mesh geometry
-## overlaps any other currently-present part's actual mesh geometry, using a
+## overlaps any other currently-present part's actual mesh geometry -- other
+## than parts it already touches in the finished model (designed contact: a
+## beam on its column, a corbel set into its cornice; see
+## _build_designed_contacts()) and by more than CONTACT_TOLERANCE -- using a
 ## synchronous PhysicsDirectSpaceState3D.intersect_shape() query: the mover's
 ## convex hull against every other registered part's exact trimesh
 ## (registered by setup() -- see that function's doc comment for why each
@@ -164,7 +207,8 @@ func query(building_parts: Dictionary, states: Dictionary, sibling_groups: Dicti
 	var active_set: Dictionary = {} # part_name -> true, for O(1) hit filtering below
 	for part_name in states.keys():
 		var node = building_parts.get(part_name)
-		if states[part_name].progress > 0.0 and node and node.visible:
+		if states[part_name].progress > 0.0 and node and node.visible \
+				and absf(node.global_transform.basis.determinant()) > _MIN_BASIS_DET:
 			active_names.append(part_name)
 			active_set[part_name] = true
 
@@ -175,6 +219,8 @@ func query(building_parts: Dictionary, states: Dictionary, sibling_groups: Dicti
 			movers.append(part_name)
 
 	if movers.is_empty() or not _space_rid.is_valid():
+		return []
+	if not _designed_contacts_ready and not _build_designed_contacts(building_parts, states):
 		return []
 
 	# Sync every currently-visible part's live transform to its physics area
@@ -210,7 +256,7 @@ func query(building_parts: Dictionary, states: Dictionary, sibling_groups: Dicti
 		query_params.collide_with_bodies = false
 		query_params.exclude = [mover_entry.area_rid]
 
-		var hits = space_state.intersect_shape(query_params, maxi(active_names.size(), 8))
+		var hits = _intersect(space_state, query_params, active_names.size())
 
 		for hit in hits:
 			var other_name = _area_rid_to_part.get(hit.rid)
@@ -224,6 +270,8 @@ func query(building_parts: Dictionary, states: Dictionary, sibling_groups: Dicti
 			# registers a "collision" against a part that isn't really there.
 			if not active_set.has(other_name):
 				continue
+			if _designed_contacts.get(mover_name, {}).has(other_name):
+				continue # touches it in the finished model too: that is the design, not a clash
 			var leaf_pair_key = (mover_name + "|" + other_name) if mover_name < other_name else (other_name + "|" + mover_name)
 			if checked_leaf_pairs.has(leaf_pair_key):
 				continue
@@ -257,3 +305,59 @@ func query(building_parts: Dictionary, states: Dictionary, sibling_groups: Dicti
 				}
 
 	return collisions_by_commander_pair.values()
+
+## Every part each install mover touches or overlaps when *everything* stands at
+## its finished placement -- the model's own connections. Computed once: every
+## area is moved to its part's original_transform, each mover's (inset) hull is
+## queried there, and the areas are left for query() to re-sync as usual.
+##
+## Without this, the moment a piece lands it "clashes" with whatever it was
+## designed to sit on or against. Measured on a real 663-part model with its
+## stone pieces craned in: corbels set into the cornice, cornice ends bearing on
+## the roof timbers, and neighbouring cornice segments sharing a face were all
+## reported -- a large share of what made every lift look like a clash. A pair
+## that overlaps in the finished model is a question for a static clash check
+## of the model, not a sequencing problem this tool can surface.
+##
+## false when the physics space can't be queried yet; query() retries next call.
+func _build_designed_contacts(building_parts: Dictionary, states: Dictionary) -> bool:
+	var space_state := PhysicsServer3D.space_get_direct_state(_space_rid)
+	if not space_state:
+		return false
+	for part_name in _collision_shapes.keys():
+		var node: Node3D = building_parts.get(part_name)
+		if node and node.has_meta("original_transform"):
+			PhysicsServer3D.area_set_transform(_collision_shapes[part_name].area_rid, node.get_meta("original_transform"))
+	for part_name in states.keys():
+		if states[part_name].anim_type != "install":
+			continue
+		var entry = _collision_shapes.get(part_name)
+		var node: Node3D = building_parts.get(part_name)
+		if not entry or not node or not node.has_meta("original_transform"):
+			continue
+		var params := PhysicsShapeQueryParameters3D.new()
+		params.shape_rid = entry.convex_shape.get_rid()
+		params.transform = node.get_meta("original_transform")
+		params.collision_mask = _COLLISION_LAYER
+		params.collide_with_areas = true
+		params.collide_with_bodies = false
+		params.exclude = [entry.area_rid]
+		var touching := {}
+		for hit in _intersect(space_state, params, _collision_shapes.size()):
+			var other = _area_rid_to_part.get(hit.rid)
+			if other and other != part_name:
+				touching[other] = true
+		_designed_contacts[part_name] = touching
+	_designed_contacts_ready = true
+	return true
+
+## intersect_shape() with a result cap that can't silently truncate: retried
+## with a larger cap whenever it comes back full.
+static func _intersect(space_state: PhysicsDirectSpaceState3D, params: PhysicsShapeQueryParameters3D, expected: int) -> Array:
+	var cap := maxi(expected, 8)
+	while true:
+		var hits := space_state.intersect_shape(params, cap)
+		if hits.size() < cap:
+			return hits
+		cap *= 4
+	return []

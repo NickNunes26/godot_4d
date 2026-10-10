@@ -11,8 +11,8 @@ Contents: [1. What you need](#1-what-you-need) · [2. Install](#2-install) ·
 [3. Try the demo](#3-try-the-demo) · [4. Prepare your scene](#4-prepare-your-scene) ·
 [5. Import your model](#5-import-your-model-ifc) · [6. Get a schedule](#6-get-a-schedule) ·
 [7. Terrain](#7-terrain-and-the-site) · [8. Preview and edit](#8-preview-and-edit-the-schedule-in-the-editor) ·
-[9. Formwork and scaffolding](#9-formwork-and-scaffolding) · [10. Play](#10-play-it) ·
-[11. Record a video](#11-record-a-video) · [12. Troubleshooting](#12-troubleshooting)
+[9. Formwork and scaffolding](#9-formwork-and-scaffolding) · [10. Site equipment](#10-site-equipment) · [11. Play](#11-play-it) ·
+[12. Record a video](#12-record-a-video) · [13. Troubleshooting](#13-troubleshooting)
 
 ---
 
@@ -46,7 +46,7 @@ Contents: [1. What you need](#1-what-you-need) · [2. Install](#2-install) ·
 
 Open `addons/construction_4d_tool/examples/demo.tscn` and press **F6**. A small building of
 boxes builds itself over ten days. Press **Play** on the bar at the top, drag the slider, and
-click in the view to fly around (details in [section 10](#10-play-it)). If this works, the addon is
+click in the view to fly around (details in [section 11](#11-play-it)). If this works, the addon is
 installed correctly.
 
 ## 4. Prepare your scene
@@ -63,7 +63,7 @@ FileSystem panel onto its **Script** field in the Inspector.
 
 You do not need to add a camera, sky or light:
 if the scene has none when you press Play, the tool adds a camera framed on the building, a
-sky and a sun for that run. You can add your own later ([section 11](#11-record-a-video)).
+sky and a sun for that run. You can add your own later ([section 12](#12-record-a-video)).
 
 ## 5. Import your model (IFC)
 
@@ -78,8 +78,9 @@ sky and a sun for that run. You can add your own later ([section 11](#11-record-
    | **End date** | The end date property. | This **or** Duration |
    | **Duration (days)** | The duration property. | This **or** End date |
    | **Display name** | A readable name for the activity. | No |
-   | **Decide type from** + rules | A property that tells how each element appears (e.g. a column whose values are `fill_up`, `rise_up`...). Values that already are type names are used as they are; add a rule only to translate other values: *contains* `hormigón` → `fill_up`. | No |
-   | **Default type** | The animation for elements no rule matches. | — |
+   | **Infer the type from the activity name** | On by default. Each activity's animation is chosen from its code and display name: *Hormigonado…* / *Formigón…* pours, *Mampostería…* builds up, *Excavación…* digs, *Carpintería…* fades in, and so on (Spanish, Galician, Portuguese, English). Nothing else to set up. | — |
+   | **Type stated by property** + rules | Only if your model already says how each element appears (a property whose values are `fill_up`, `build_up`...), or carries values a rule can translate: *contains* `hormigón` → `fill_up`. A type stated this way wins over the inferred one. Leave **(none)** otherwise. | No |
+   | **Fallback type** | The animation for activities nothing above decides. | — |
 
    **OK** stays greyed out until the required fields are chosen. Press **OK**.
 3. The elements appear under `SequenceManager` (e.g. `IFCParts_mymodel`). Your answers are saved
@@ -91,9 +92,18 @@ sky and a sun for that run. You can add your own later ([section 11](#11-record-
    go in one scene: press **Load IFC (4D)** again for each. Each is placed next to the first by
    its georeference.
 
-The animation types are: `scale_up` (grows), `drop_in` (lowered from above), `rise_up` (rises from
-below), `sink_down` (sinks and disappears, e.g. excavated soil), `fill_up` (concrete pour, fills
-from the bottom), `fade_in`, `fade_out` (e.g. clearing trees), `install` (lifted by a crane).
+The animation types are: `fill_up` (concrete pour, fills from the bottom), `build_up` (built up
+from its own base, e.g. masonry, scaffolding), `drop_in` (lowered onto its place from a few
+metres above, one piece after another), `sink_down` (sinks and disappears, e.g. excavated soil),
+`fade_in`, `fade_out` (e.g. clearing trees), `scale_up` (grows from its base, e.g. planting),
+`rise_up` (the whole element rises from 10 m below), `install` (lifted by a crane, and
+clash-checked).
+
+What the name inference picks, roughly: demolition and site clearing fade out; excavation and
+topsoil sink down; concrete, slabs, footings and columns fill up; masonry, walls, chimneys and
+scaffolding build up; stone pieces, precast, steel and timber framing, ironwork and lighting drop
+in one by one; roofing, openings, finishes and services fade in; planting scales up. It never
+picks `install`: a crane lift is a decision about the site, not about the name.
 
 ## 6. Get a schedule
 
@@ -168,8 +178,11 @@ Nacional de España — PNOA / MDT05, CC BY 4.0 (scne.es)*.
 
 1. Press **Start Preview**. A timeline appears in the dock: drag its slider and the 3D view
    shows the building on that date. **Do not save the scene while the preview is on.**
-2. The **Schedule Inspector** below lists every action. Its column headers are in Spanish (hover
-   one for the English name). Per row you can change **Tipo** (animation), **Fecha Inicio**,
+2. The **Schedule Inspector** below lists every action. **Auto types** sets every row's **Tipo**
+   and cadence from the activity's name, as the import does (useful for a schedule that came from
+   CSV, Project XML or an older version); the Output panel lists every change, and rows whose name
+   it doesn't recognise are left alone. Its column headers are in Spanish (hover one for the
+   English name). Per row you can change **Tipo** (animation), **Fecha Inicio**,
    **Duración (días)**, **Fecha Fin**, **Unidades/Día**, **Encofrado** and **Días vertido**
    (section 9), **Depende De** (the action it waits for) and **Retraso (días)**, and remove the row
    (**✕**). **Ancla** decides which of start / duration / end stays fixed when you edit the others.
@@ -201,18 +214,47 @@ scaffolding that is put up and struck must be set up here.
 
 Regenerating the schedule from the IFC later keeps the types you corrected, but not formwork.
 
-## 10. Play it
+This set-up is a stopgap: scaffolding borrows the concrete-formwork mechanism, serves one
+activity only, needs the JSON edit above and is lost on regeneration. A proper rework is planned
+— see [docs/12_FUTURE_WORK.md](docs/12_FUTURE_WORK.md).
+
+## 10. Site equipment
+
+Play shows the site's plant with no setup: an **excavator** loading a **truck** at the pit during
+the excavation, a **tower crane** that goes up before the structure, lowers the stone pieces on its
+hook and comes down after the roof, and a **mobile crane** for the lifts the tower crane can't make
+(out of its reach, or after it has gone). They come and go with the activities, read from their
+names like the animation types (**Auto types**, section 8): "Excavación" brings the excavator,
+"Hormigonado", "Mampostería", "Sillería"... keep the crane on site, the roofing ends it.
+
+- **To see and move them in the editor**, press **Maquinaria** (next to **Load IFC (4D)**). A
+  **SiteEquipment** node appears with two markers, **TowerCraneSite** and **ExcavatorSite**, at the
+  proposed positions: move or turn a marker and the machine follows. Select **SiteEquipment** to
+  change **Tower Height** (ground to the jib) and **Jib Length** (0 = automatic), **Erect Days**, or
+  switch a machine off. Save the scene to keep it. Pressing **Maquinaria** again proposes fresh
+  positions (and stops the preview).
+- **The mobile crane** is set up beside each lift's pieces, so it has no marker.
+- **Your own crane**: if the scene already has one, no tower crane is added.
+- **No machines**: select the SequenceManager and untick **Auto Equipment** (and delete
+  SiteEquipment if you added one).
+- The machines are for show: they are not clash-checked and are not in the schedule.
+
+## 11. Play it
 
 Press **F5** (the first time, answer **Select Current** to make your scene the main scene) or
 **F6** for the open scene.
 
 - **Bar at the top**: **Play / Pause**, the slider (drag to any date), the speed box (schedule
   days per second, 0.1 to 5), **Reset** (back to the first day), **Scan Collisions** (only
-  relevant for crane lifts, `install`).
+  relevant for crane lifts, `install`). A lifted piece clashes when it passes through something
+  already built on its way in. Touching or overlapping what it sits on or against *in the finished
+  model* is not a clash, and neither is grazing within 2 cm. Pieces of one activity are placed
+  bottom-up, so a clash that remains usually means the activity is scheduled after what is above
+  it (e.g. window surrounds still going in after the cornice above them).
 - **Camera**: click in the view to fly. **W A S D** move, the mouse looks, **Q / E** go down / up,
   **Shift** is faster, **Esc** releases the mouse so you can use the bar again.
 
-## 11. Record a video
+## 12. Record a video
 
 **Choose the camera.** The video uses the scene's current camera, which stays still. To pick
 the shot, add a **Camera3D** to the scene, place it, and tick **Current** in the Inspector
@@ -245,7 +287,7 @@ A one-minute 1080p video ends up around 10–15 MB, fine for WhatsApp, Telegram 
 `-crf` (e.g. 24) for a smaller file. The window size (**Project Settings → Display → Window →
 Size**) is the video size; 1920 × 1080 is standard.
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 | Problem | What to do |
 |---|---|

@@ -59,6 +59,10 @@ var _action_finish_days: Dictionary = {}
 # way it already skips everything when _crane was null pre-multi-crane.
 var _install_units: Array = [] # [{start_day, pickup_pos, target_pos, tracked_part_name, lift_dur, slide_dur, crane_id}]
 var _fill_up_units: Array = [] # [{start_day, part_name, duration}]
+## The parsed construction_steps.json this schedule was built from. Read-only;
+## lets followers of the timeline (SiteEquipment) see the actions behind it
+## without being handed the data separately.
+var source_data: Dictionary = {}
 # part_name -> Array[String] of other part names installed as the same unit
 # (e.g. a column and its rebar cage). Collision checks skip these pairs --
 # they're intentionally coincident, not a real clash.
@@ -75,6 +79,10 @@ var _part_to_commander: Dictionary = {}
 # See get_collisions() below.
 var _collision_query := CollisionQuery.new()
 
+# Parts whose install start this build has already recorded -- see
+# _cache_ground_start().
+var _ground_start_cached: Dictionary = {}
+
 ## sequence_data: parsed construction_steps.json ({"steps": [...]})
 ## building_parts: name -> Node3D, from SequenceManager.initialize_parts()
 ## spatial_grouper: cached SpatialGrouper instance for commander/child
@@ -84,6 +92,7 @@ var _collision_query := CollisionQuery.new()
 ## doc comment above). Never raises -- invalid dates/durations are warned and
 ## clamped to sane defaults (see 02_ROADMAP_MILESTONES.md, Milestone 6).
 func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_grouper: SpatialGrouper, cranes: Dictionary = {}):
+	source_data = sequence_data
 	var min_epoch: float = INF
 	var epoch_cache: Dictionary = {} # start_date string -> epoch (float), NAN if unparseable
 
@@ -920,12 +929,32 @@ func _assign_crane(world_pos: Vector3, cranes: Dictionary, explicit_crane_id: St
 			best_crane = crane
 	return {"crane": best_crane, "crane_id": best_id}
 
+## Records where an install part starts its lift, as the *local position* its
+## node must take there -- which is what _install_instant() assigns it to.
+##
+## The pickup point is a world position for the unit as a whole (its commander's
+## centre), so what is applied is the *displacement* from that centre, brought
+## into the part's parent space and added to the part's own rest position. It
+## used to store the world point itself, which was only right for a part whose
+## parent sits at the world origin and whose node origin is its unit's centre.
+## In any offset container -- a georeferenced second model, a model lowered
+## onto the terrain -- every lift started that offset away (metres underground,
+## rising through the building), and every child of a commander unit started
+## stacked on the same point instead of travelling with its commander.
+##
+## First call per part per schedule wins (a part only ever has one install
+## window); the meta is overwritten on every rebuild rather than trusted, since
+## older scenes can carry a world-space value saved by the previous behaviour.
 func _cache_ground_start(part_name: String, world_pos: Vector3, crane: Crane, building_parts: Dictionary) -> void:
 	var part = building_parts.get(part_name)
-	if not part: return
-	if part.has_meta("install_ground_start"): return
+	if not part or _ground_start_cached.has(part_name): return
+	_ground_start_cached[part_name] = true
 
-	part.set_meta("install_ground_start", _crane_pickup_position(world_pos, crane))
+	var displacement: Vector3 = _crane_pickup_position(world_pos, crane) - world_pos
+	var parent := part.get_parent() as Node3D
+	if parent:
+		displacement = parent.global_transform.basis.inverse() * displacement
+	part.set_meta("install_ground_start", part.get_meta("original_pos") + displacement)
 
 ## Returns {min_day, max_day}: the day-number bounds of the whole schedule.
 ## Use this to size a timeline slider's min/max range.
@@ -977,6 +1006,11 @@ func get_install_units() -> Array:
 func get_fill_up_units() -> Array:
 	return _fill_up_units
 
+## {start_day, end_day, anim_type} for one scheduled part, or {} if the part
+## has no schedule.
+func get_part_window(part_name: String) -> Dictionary:
+	return _part_schedules.get(part_name, {})
+
 ## The core query: given a day number, returns every scheduled part's state
 ## as {anim_type, progress} where progress in [0, 1] (0 = not started yet,
 ## 1 = complete). Feed this straight into AnimationApplier.apply_instant()
@@ -1008,6 +1042,24 @@ func get_part_states(current_day: float) -> Dictionary:
 	_state_cache_key = cache_key
 	_state_cache = states
 	return states
+
+## The [start_day, end_day] spans during which at least one install part is in
+## transit, merged and sorted. A collision can only exist inside one of them
+## (only movers are checked), so TimelineController.scan_collisions() samples
+## these instead of the whole schedule.
+func get_install_windows() -> Array:
+	var spans: Array = []
+	for sched in _part_schedules.values():
+		if sched.anim_type == "install" and sched.end_day > sched.start_day:
+			spans.append([sched.start_day, sched.end_day])
+	spans.sort_custom(func(a, b): return a[0] < b[0])
+	var merged: Array = []
+	for span in spans:
+		if not merged.is_empty() and span[0] <= merged[-1][1]:
+			merged[-1][1] = maxf(merged[-1][1], span[1])
+		else:
+			merged.append(span.duplicate())
+	return merged
 
 ## Whether any part is animated with "install" -- the only kind of part
 ## CollisionQuery ever checks as a mover. Without one no collision can exist

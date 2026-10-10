@@ -46,6 +46,12 @@ var _timeline_controller: TimelineController = null
 ## node that shouldn't be wired in (e.g. a decorative/preview crane prop) or
 ## if explicit control over exactly which nodes count is wanted.
 @export var crane_paths: Array[NodePath] = []
+## Puts site plant on the scene for the run when it has none of its own: a
+## tower crane, a mobile crane, an excavator and a truck, placed from the model
+## and following the schedule (see SiteEquipment). A SiteEquipment node added
+## from the dock is always used, whatever this says. No tower crane is added to
+## a scene that already has a Crane.
+@export var auto_equipment: bool = true
 ## Where the parts container's origin is on the map (UTM), kept through IFC
 ## import and used by the terrain and GeoSun. Filled in by Load IFC when the
 ## model is georeferenced; editable here (or from the dock's Terreno section)
@@ -103,6 +109,8 @@ func _ready():
 	load_json()
 	_generate_formwork()
 	initialize_parts()
+	# Before the cranes are collected: the tower crane it adds is one.
+	SiteEquipment.ensure(self, auto_equipment)
 	_cranes = _resolve_cranes()
 	if _cranes.is_empty():
 		push_warning("SequenceManager: no crane found in the scene")

@@ -99,9 +99,9 @@ static func generate(parts: Variant, mapping: IfcMapping, existing: Dictionary =
 	var derived := {}
 	for key in groups.keys():
 		var g: Dictionary = groups[key]
-		var derived_type := _type_for(g.type_value, mapping)
-		var resolved := _resolve_type_and_batch(key, derived_type, existing_actions, mapping)
-		derived[key] = {"type": derived_type, "batch": batch_for(derived_type)}
+		var d := _derive(g.type_value, mapping, [key, g.label])
+		var resolved := _resolve_type_and_batch(key, d, existing_actions, mapping)
+		derived[key] = {"type": d.type, "batch": d.batch}
 		actions.append({
 			"id": key,
 			"target_prefix": key,
@@ -156,8 +156,9 @@ static func generate(parts: Variant, mapping: IfcMapping, existing: Dictionary =
 ##     it, so take the freshly derived value (rule edits take effect);
 ##   - existing value differs -> the author changed it, keep theirs;
 ##   - no record of the last derivation -> keep the existing value (conservative).
-static func _resolve_type_and_batch(id: String, derived_type: String, existing_actions: Dictionary, mapping: IfcMapping) -> Dictionary:
-	var derived_batch := batch_for(derived_type)
+static func _resolve_type_and_batch(id: String, derived: Dictionary, existing_actions: Dictionary, mapping: IfcMapping) -> Dictionary:
+	var derived_type: String = derived.type
+	var derived_batch: bool = derived.batch
 	if not existing_actions.has(id):
 		return {"type": derived_type, "batch": derived_batch}
 	var ex: Dictionary = existing_actions[id]
@@ -289,21 +290,46 @@ static func batch_for(anim_type: String) -> bool:
 	return not _STAGGERED_TYPES.has(anim_type)
 
 
-## First matching user rule wins; then a value that already is a type name
-## (a model carrying `fill_up` needs no rule to say so); otherwise the
-## mapping's default type. Without the middle step such a model with no rules
-## got the default for every action -- `install` made everything a crane lift,
-## and so a clash-checked mover.
-static func _type_for(type_value, mapping: IfcMapping) -> String:
+## An action's {type, batch}, most explicit source first:
+##   1. a user rule matching the type property's value;
+##   2. a type property value that already is a type name (`fill_up`);
+##   3. with mapping.infer_types, what the names say -- the type value, the
+##      element id and the display label, read by TaskClassifier ("Hormigonado
+##      de zapatas" pours, "Mampostería" builds up). This is what lets a model
+##      carry no animation property at all;
+##   4. the mapping's default type.
+## Batching follows the classifier's call when it decided the type (trees are
+## planted one by one, a slab is one pour), batch_for() otherwise.
+static func _derive(type_value, mapping: IfcMapping, names: Array = []) -> Dictionary:
+	var explicit := _explicit_type(type_value, mapping)
+	if explicit != "":
+		return {"type": explicit, "batch": batch_for(explicit), "source": "model"}
+	if mapping.infer_types:
+		var guess := TaskClassifier.classify([type_value] + names)
+		if not guess.is_empty():
+			return {"type": guess.type, "batch": guess.batch, "source": "inferred", "keyword": guess.keyword}
+	return {"type": mapping.default_type, "batch": batch_for(mapping.default_type), "source": "default"}
+
+
+## The type the model states for an action, or "" when it states none.
+## Without the type-name step a model with no rules got the default for every
+## action -- `install` made everything a crane lift, and so a clash-checked
+## mover.
+static func _explicit_type(type_value, mapping: IfcMapping) -> String:
 	if type_value == null:
-		return mapping.default_type
+		return ""
 	var lower := str(type_value).strip_edges().to_lower()
 	for rule in mapping.type_rules:
 		if lower.contains(str(rule["contains"]).to_lower()):
 			return str(rule["type"])
 	if lower in AnimationApplier.TYPES:
 		return lower
-	return mapping.default_type
+	return ""
+
+
+## The type alone (rules, type name, inference, default) -- see _derive().
+static func _type_for(type_value, mapping: IfcMapping, names: Array = []) -> String:
+	return _derive(type_value, mapping, names).type
 
 
 ## Inclusive calendar-day span.

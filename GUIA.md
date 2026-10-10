@@ -11,8 +11,8 @@ Contenido: [1. Qué necesitas](#1-qué-necesitas) · [2. Instalación](#2-instal
 [3. Prueba el ejemplo](#3-prueba-el-ejemplo) · [4. Prepara la escena](#4-prepara-la-escena) ·
 [5. Importa el modelo](#5-importa-el-modelo-ifc) · [6. Consigue la planificación](#6-consigue-la-planificación) ·
 [7. Terreno](#7-el-terreno-y-la-parcela) · [8. Vista previa y edición](#8-vista-previa-y-edición-en-el-editor) ·
-[9. Encofrados y andamios](#9-encofrados-y-andamios) · [10. Reproducir](#10-reprodúcelo) ·
-[11. Grabar un vídeo](#11-graba-un-vídeo) · [12. Problemas frecuentes](#12-problemas-frecuentes)
+[9. Encofrados y andamios](#9-encofrados-y-andamios) · [10. Maquinaria](#10-maquinaria-de-obra) · [11. Reproducir](#11-reprodúcelo) ·
+[12. Grabar un vídeo](#12-graba-un-vídeo) · [13. Problemas frecuentes](#13-problemas-frecuentes)
 
 ---
 
@@ -47,7 +47,7 @@ Contenido: [1. Qué necesitas](#1-qué-necesitas) · [2. Instalación](#2-instal
 
 Abre `addons/construction_4d_tool/examples/demo.tscn` y pulsa **F6**. Un edificio pequeño hecho
 de cajas se construye solo en diez días. Pulsa **Play** en la barra de arriba, arrastra el
-deslizador y haz clic en la vista para volar (detalles en el [apartado 10](#10-reprodúcelo)). Si
+deslizador y haz clic en la vista para volar (detalles en el [apartado 11](#11-reprodúcelo)). Si
 esto funciona, el addon está bien instalado.
 
 ## 4. Prepara la escena
@@ -67,7 +67,7 @@ campo **Script** del Inspector.
 No hace falta añadir cámara, cielo ni luz: si
 la escena no los tiene al pulsar Play, la herramienta añade para esa ejecución una cámara
 encuadrada en el edificio, un cielo y un sol. Puedes poner los tuyos más adelante
-([apartado 11](#11-graba-un-vídeo)).
+([apartado 12](#12-graba-un-vídeo)).
 
 ## 5. Importa el modelo (IFC)
 
@@ -82,8 +82,9 @@ encuadrada en el edificio, un cielo y un sol. Puedes poner los tuyos más adelan
    | **End date** | La propiedad con la fecha de fin. | Esta **o** la duración |
    | **Duration (days)** | La propiedad con la duración. | Esta **o** la fecha de fin |
    | **Display name** | Un nombre legible de la actividad. | No |
-   | **Decide type from** + reglas | Una propiedad que diga cómo aparece cada elemento (p. ej. una cuyos valores son `fill_up`, `rise_up`...). Los valores que ya son nombres de tipo se usan tal cual; añade una regla solo para traducir otros valores: *contiene* `hormigón` → `fill_up`. | No |
-   | **Default type** | La animación de los elementos a los que no se aplica ninguna regla. | — |
+   | **Infer the type from the activity name** | Activada por defecto. La animación de cada actividad se elige por su código y su nombre: *Hormigonado…* / *Formigón…* hormigona, *Mampostería…* se levanta, *Excavación…* excava, *Carpintería…* aparece, etc. (español, gallego, portugués, inglés). No hay que configurar nada más. | — |
+   | **Type stated by property** + reglas | Solo si tu modelo ya dice cómo aparece cada elemento (una propiedad cuyos valores son `fill_up`, `build_up`...), o trae valores que una regla puede traducir: *contiene* `hormigón` → `fill_up`. Un tipo indicado así gana al deducido. Si no, deja **(none)**. | No |
+   | **Fallback type** | La animación de las actividades que nada de lo anterior decide. | — |
 
    **OK** sigue en gris hasta que eliges los campos obligatorios. Pulsa **OK**.
 3. Los elementos aparecen bajo `SequenceManager` (p. ej. `IFCParts_mimodelo`). Tus respuestas se
@@ -96,10 +97,19 @@ encuadrada en el edificio, un cielo y un sol. Puedes poner los tuyos más adelan
    urbanización, o dos calzadas): pulsa **Load IFC (4D)** otra vez para cada uno. Cada uno se
    coloca junto al primero según su georreferencia.
 
-Los tipos de animación son: `scale_up` (crece), `drop_in` (baja desde arriba), `rise_up` (sube
-desde abajo), `sink_down` (se hunde y desaparece, p. ej. tierra excavada), `fill_up` (hormigonado,
-se llena desde abajo), `fade_in`, `fade_out` (p. ej. desbroce de árboles), `install` (lo coloca una
+Los tipos de animación son: `fill_up` (hormigonado, se llena desde abajo), `build_up` (se levanta
+desde su base, p. ej. mampostería, andamios), `drop_in` (baja hasta su sitio desde unos metros
+más arriba, pieza a pieza), `sink_down` (se hunde y desaparece, p. ej. tierra excavada),
+`fade_in`, `fade_out` (p. ej. desbroce), `scale_up` (crece desde su base, p. ej. plantaciones),
+`rise_up` (todo el elemento sube desde 10 m por debajo), `install` (lo coloca una
 grúa).
+
+Qué elige, a grandes rasgos, la deducción por el nombre: la demolición y el desbroce
+desaparecen; la excavación y la tierra vegetal se hunden; el hormigón, forjados, zapatas y pilares
+se hormigonan; la mampostería, muros, chimeneas y andamios se levantan; las piezas de cantería,
+prefabricados, estructuras de acero y madera, la forja y el alumbrado bajan pieza a pieza; la
+cubierta, carpinterías, acabados e instalaciones aparecen; las plantaciones crecen. Nunca elige
+`install`: un izado con grúa es una decisión de obra, no del nombre.
 
 ## 6. Consigue la planificación
 
@@ -176,8 +186,11 @@ panel, y los vídeos grabados con la herramienta lo incluyen automáticamente. P
 
 1. Pulsa **Start Preview**. Aparece una línea de tiempo en el panel: arrastra su deslizador y la
    vista 3D muestra la obra en esa fecha. **No guardes la escena con la vista previa activa.**
-2. Debajo, el **Schedule Inspector** muestra todas las actividades. En cada fila puedes cambiar
-   **Tipo** (la animación), **Fecha Inicio**, **Duración (días)**, **Fecha Fin**,
+2. Debajo, el **Schedule Inspector** muestra todas las actividades. **Auto types** pone el
+   **Tipo** y la cadencia de cada fila según el nombre de la actividad, igual que la importación
+   (útil para una planificación que vino de CSV, de Project XML o de una versión anterior); el panel
+   Output lista cada cambio, y las filas cuyo nombre no reconoce no se tocan. En cada fila puedes
+   cambiar **Tipo** (la animación), **Fecha Inicio**, **Duración (días)**, **Fecha Fin**,
    **Unidades/Día**, **Encofrado** y **Días vertido** (apartado 9), **Depende De** (la actividad a
    la que espera) y **Retraso (días)**, y borrar la fila (**✕**). **Ancla** decide cuál de inicio /
    duración / fin se mantiene al editar los demás.
@@ -208,22 +221,55 @@ encofrado y los andamios que se montan y se desmontan se configuran aquí.
      de que acabe la actividad.
   3. De vuelta en el panel, pulsa **Reload from JSON**.
 
+Este procedimiento es provisional: los andamios usan el mecanismo de encofrado del hormigón,
+sirven a una sola actividad, requieren la edición del JSON de arriba y se pierden al regenerar.
+Está prevista una revisión a fondo: ver [docs/12_FUTURE_WORK.md](docs/12_FUTURE_WORK.md).
+
 Si más adelante regeneras la planificación desde el IFC, se conservan los tipos que corregiste,
 pero no los encofrados.
 
-## 10. Reprodúcelo
+## 10. Maquinaria de obra
+
+Al reproducir aparece la maquinaria de la obra sin configurar nada: una **excavadora** cargando un
+**camión** en la excavación durante el movimiento de tierras, una **grúa torre** que se monta antes
+de la estructura, baja las piezas de piedra con el gancho y se desmonta después de la cubierta, y
+una **grúa autopropulsada** para los izados que la grúa torre no puede hacer (fuera de su alcance o
+cuando ya se ha ido). Entran y salen con las actividades, leídas de sus nombres igual que los tipos
+de animación (**Auto types**, apartado 8): "Excavación" trae la excavadora, "Hormigonado",
+"Mampostería", "Sillería"... mantienen la grúa en obra y la cubierta la termina.
+
+- **Para verlas y moverlas en el editor**, pulsa **Maquinaria** (junto a **Load IFC (4D)**).
+  Aparece un nodo **SiteEquipment** con dos marcadores, **TowerCraneSite** y **ExcavatorSite**, en
+  las posiciones propuestas: mueve o gira un marcador y la máquina lo sigue. Selecciona
+  **SiteEquipment** para cambiar **Tower Height** (del suelo a la pluma) y **Jib Length** (0 =
+  automático), los días de montaje (**Erect Days**) o desactivar una máquina. Guarda la escena para
+  conservarlo. Si vuelves a pulsar **Maquinaria**, propone posiciones nuevas (y detiene la vista
+  previa).
+- **La grúa autopropulsada** se coloca en cada izado junto a las piezas, así que no tiene marcador.
+- **Si la escena ya tiene una grúa tuya**, no se añade la grúa torre.
+- **Sin maquinaria**: selecciona el SequenceManager y desmarca **Auto Equipment** (y borra
+  SiteEquipment si lo añadiste).
+- Las máquinas son solo visuales: no se comprueban colisiones con ellas ni aparecen en la
+  planificación.
+
+## 11. Reprodúcelo
 
 Pulsa **F5** (la primera vez, responde **Seleccionar actual** para que tu escena sea la principal)
 o **F6** para la escena abierta.
 
 - **Barra superior**: **Play / Pause**, el deslizador (arrástralo a cualquier fecha), la casilla
   de velocidad (días de obra por segundo, de 0,1 a 5), **Reset** (vuelve al primer día),
-  **Scan Collisions** (solo tiene sentido con izados de grúa, `install`).
+  **Scan Collisions** (solo tiene sentido con izados de grúa, `install`). Una pieza izada choca
+  cuando atraviesa algo ya construido en su camino. Tocar o solaparse con aquello sobre lo que
+  apoya *en el modelo terminado* no es un choque, ni rozar a menos de 2 cm. Las piezas de una
+  actividad se colocan de abajo arriba, así que un choque que queda suele indicar que la actividad
+  está planificada después de lo que tiene encima (p. ej. recercados que siguen colocándose cuando
+  la cornisa de encima ya está puesta).
 - **Cámara**: haz clic en la vista para volar. **W A S D** para moverte, el ratón para mirar,
   **Q / E** para bajar / subir, **Mayús** para ir más rápido, **Esc** para soltar el ratón y volver
   a usar la barra.
 
-## 11. Graba un vídeo
+## 12. Graba un vídeo
 
 **Elige la cámara.** El vídeo usa la cámara activa de la escena, que no se mueve. Para elegir el
 plano, añade una **Camera3D** a la escena, colócala y marca **Current** en el Inspector (asígnale
@@ -256,7 +302,7 @@ Un vídeo de un minuto a 1080p queda en unos 10–15 MB, válido para WhatsApp, 
 Sube `-crf` (p. ej. 24) para un archivo más pequeño. El tamaño de la ventana (**Configuración del
 proyecto → Display → Window → Size**) es el tamaño del vídeo; 1920 × 1080 es el estándar.
 
-## 12. Problemas frecuentes
+## 13. Problemas frecuentes
 
 | Problema | Qué hacer |
 |---|---|

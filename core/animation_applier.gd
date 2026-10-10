@@ -11,7 +11,7 @@ class_name AnimationApplier
 ## animation-type dropdown (timeline_dock.gd) can populate itself from this
 ## instead of hardcoding a second copy that could drift out of sync.
 const TYPES: Array[String] = [
-	"scale_up", "drop_in", "rise_up", "sink_down", "fill_up", "fade_in", "fade_out", "install"
+	"scale_up", "drop_in", "rise_up", "sink_down", "fill_up", "build_up", "fade_in", "fade_out", "install"
 ]
 
 ## "formwork" is deliberately NOT in TYPES, even though apply_instant() handles
@@ -55,6 +55,26 @@ const POUR_AMOUNT := 800
 ## a pour. Rides on the emitter, so it stays at the fill surface for free.
 const POUR_SPLASH_AMOUNT := 220
 
+## drop_in lowers a piece onto its place from just above it -- the last few
+## metres of a crane lift, which is the part of one anybody watches. The height
+## follows the piece: DROP_CLEARANCE plus DROP_PER_METRE times its own height,
+## kept within [DROP_MIN, DROP_MAX]. It used to fall from a fixed 15 m with a
+## cubic ease-out, i.e. fastest at the top and appearing out of nothing in
+## mid-air, which read as things thrown at the building rather than set on it.
+const DROP_MIN := 2.5
+const DROP_MAX := 8.0
+const DROP_PER_METRE := 1.5
+const DROP_CLEARANCE := 1.5
+## Share of a drop_in spent fading in, so a piece never pops into existence
+## above the building.
+const DROP_FADE := 0.2
+
+## Per material, what its alpha and transparency mode were before any animation
+## touched them. Fades scale *that* alpha instead of assuming 1.0, so glass
+## (alpha 0.3, alpha-blended) ends a fade_in as glass, not as an opaque pane.
+const _ORIGINAL_ALPHA_META := "_c4d_original_alpha"
+const _ORIGINAL_TRANSPARENCY_META := "_c4d_original_transparency"
+
 ## Builds a tween that plays anim_type on part over dur seconds, starting
 ## from now. Used for live playback (crane swings, particle bursts).
 static func apply(pt: Tween, part: Node3D, anim_type: String, dur: float):
@@ -64,23 +84,18 @@ static func apply(pt: Tween, part: Node3D, anim_type: String, dur: float):
 		"rise_up":   _rise_up(pt, part, dur)
 		"sink_down": _sink_down(pt, part, dur)
 		"fill_up":   _fill_up(pt, part, dur)
+		"build_up":  _grow_from_base(pt, part, dur)
 		"fade_in":   _fade_in(pt, part, dur)
 		"fade_out":  _fade_out(pt, part, dur)
 		"install":   _install(pt, part, dur)
 
+## scale_up, drop_in and the fades play by driving their instant functions, so
+## live playback and scrubbing can never disagree about what they look like.
 static func _scale_up(pt: Tween, part: Node3D, dur: float):
-	part.visible = true
-	part.position = part.get_meta("original_pos")
-	pt.tween_property(part, "scale", part.get_meta("original_scale"), dur)\
-	  .set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	pt.tween_method(func(p: float): AnimationApplier._scale_up_instant(part, p), 0.0, 1.0, dur)
 
 static func _drop_in(pt: Tween, part: Node3D, dur: float):
-	var orig_pos = part.get_meta("original_pos")
-	part.visible = true
-	part.scale = part.get_meta("original_scale")
-	part.position = orig_pos + Vector3(0, 15, 0)
-	pt.tween_property(part, "position", orig_pos, dur)\
-	  .set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	pt.tween_method(func(p: float): AnimationApplier._drop_in_instant(part, p), 0.0, 1.0, dur)
 
 static func _rise_up(pt: Tween, part: Node3D, dur: float):
 	var orig_pos = part.get_meta("original_pos")
@@ -97,6 +112,15 @@ static func _sink_down(pt: Tween, part: Node3D, dur: float):
 	pt.tween_callback(func(): part.visible = false)
 
 static func _fill_up(pt: Tween, part: Node3D, dur: float):
+	_grow_from_base(pt, part, dur)
+	AnimationApplier.fire_fill_up_particles(part, dur, {})
+
+## fill_up's growth without the pour: the element rises from its own base, the
+## way a wall goes up course by course. build_up is exactly this, and exists
+## because rise_up -- the only other "comes up" type -- moves the *whole*
+## element up from 10 m below, i.e. through the slab and foundations it is
+## built on.
+static func _grow_from_base(pt: Tween, part: Node3D, dur: float):
 	var orig_pos = part.get_meta("original_pos")
 	var orig_scale = part.get_meta("original_scale")
 	var aabb_bottom_y: float = part.get_meta("original_aabb").position.y
@@ -107,8 +131,6 @@ static func _fill_up(pt: Tween, part: Node3D, dur: float):
 	part.position = Vector3(orig_pos.x, start_pos_y, orig_pos.z)
 	pt.tween_property(part, "scale:y", orig_scale.y, dur)
 	pt.parallel().tween_property(part, "position:y", orig_pos.y, dur)
-
-	AnimationApplier.fire_fill_up_particles(part, dur, {})
 
 ## The root "pour_stream" block, or {} -- sibling of formwork_defaults, and
 ## placed there for the same reason: it describes how the *project* renders a
@@ -350,21 +372,10 @@ static func _pour_splash(grain: float, spray: float, footprint: float, amount: i
 	return sys
 
 static func _fade_in(pt: Tween, part: Node3D, dur: float):
-	part.visible = true
-	part.scale = part.get_meta("original_scale")
-	part.position = part.get_meta("original_pos")
-	if part is MeshInstance3D:
-		var mat = part.get_active_material(0)
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.albedo_color.a = 0.0
-		pt.tween_property(mat, "albedo_color:a", 1.0, dur)
+	pt.tween_method(func(p: float): AnimationApplier._fade_in_instant(part, p), 0.0, 1.0, dur)
 
 static func _fade_out(pt: Tween, part: Node3D, dur: float):
-	if part is MeshInstance3D:
-		var mat = part.get_active_material(0)
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		pt.tween_property(mat, "albedo_color:a", 0.0, dur)
-		pt.tween_callback(func(): part.visible = false)
+	pt.tween_method(func(p: float): AnimationApplier._fade_out_instant(part, p), 0.0, 1.0, dur)
 
 static func _install(pt: Tween, part: Node3D, dur: float):
 	var orig_pos = part.get_meta("original_pos")
@@ -400,6 +411,7 @@ static func apply_instant(part: Node3D, anim_type: String, progress: float) -> v
 		"rise_up":   _rise_up_instant(part, progress)
 		"sink_down": _sink_down_instant(part, progress)
 		"fill_up":   _fill_up_instant(part, progress)
+		"build_up":  _fill_up_instant(part, progress)
 		"fade_in":   _fade_in_instant(part, progress)
 		"fade_out":  _fade_out_instant(part, progress)
 		"install":   _install_instant(part, progress)
@@ -451,33 +463,80 @@ static func _formwork_instant(part: Node3D, progress: float) -> void:
 	apply_instant(part, assemble_type, 1.0)
 	apply_instant(part, strip_type, (progress - strip_start) / (1.0 - strip_start))
 
+## Grows from the middle of its own base, the way a plant comes up out of the
+## ground: uniform scale, base pinned, decelerating, never larger than finished.
+##
+## It used to scale about the node origin with TRANS_BACK -- i.e. from the
+## part's *centre* (IFC parts are re-origined to their bounding-box centre), so
+## everything inflated in mid-air, and overshot to ~110 % before settling back,
+## a cartoon "pop" no construction element does.
 static func _scale_up_instant(part: Node3D, progress: float) -> void:
+	var orig_pos: Vector3 = part.get_meta("original_pos")
 	var orig_scale: Vector3 = part.get_meta("original_scale")
-	part.position = part.get_meta("original_pos")
 	if progress <= 0.0:
 		part.visible = false
 		part.scale = Vector3.ZERO
+		part.position = orig_pos
 		return
 	part.visible = true
 	if progress >= 1.0:
 		part.scale = orig_scale
+		part.position = orig_pos
 		return
-	part.scale = Tween.interpolate_value(Vector3.ZERO, orig_scale, progress, 1.0, Tween.TRANS_BACK, Tween.EASE_OUT)
+	var k: float = Tween.interpolate_value(0.0, 1.0, progress, 1.0, Tween.TRANS_SINE, Tween.EASE_OUT)
+	part.scale = orig_scale * k
+	part.position = orig_pos + _base_pin_offset(part, orig_scale, orig_scale * k)
 
+## How far to move a part's origin, in its parent's space, so that the middle of
+## its base stays where it is at full size while its scale is `now` instead of
+## `full`. The rotation comes from the recorded original_transform rather than
+## the live node: at scale zero a basis has no rotation left to read.
+static func _base_pin_offset(part: Node3D, full: Vector3, now: Vector3) -> Vector3:
+	if not part.has_meta("original_aabb"):
+		return Vector3.ZERO
+	var box: AABB = part.get_meta("original_aabb")
+	var base := Vector3(box.get_center().x, box.position.y, box.get_center().z)
+	var rot := Basis()
+	if part.has_meta("original_transform"):
+		rot = (part.get_meta("original_transform") as Transform3D).basis
+		var parent := part.get_parent() as Node3D
+		if parent:
+			rot = parent.global_transform.basis.inverse() * rot
+		rot = rot.orthonormalized()
+	return rot * ((full - now) * base)
+
+## Lowered onto its place from drop_height() above it: fades in over the first
+## DROP_FADE of the window, then a controlled descent that eases in and eases
+## out -- slow off the hook, steady, slow again as it is set down.
 static func _drop_in_instant(part: Node3D, progress: float) -> void:
 	var orig_pos: Vector3 = part.get_meta("original_pos")
 	part.scale = part.get_meta("original_scale")
-	var start_y = orig_pos.y + 15.0
+	var height := drop_height(part)
 	if progress <= 0.0:
 		part.visible = false
-		part.position = Vector3(orig_pos.x, start_y, orig_pos.z)
+		part.position = orig_pos + Vector3(0, height, 0)
+		_set_opacity(part, 1.0)
 		return
 	part.visible = true
 	if progress >= 1.0:
 		part.position = orig_pos
+		_set_opacity(part, 1.0)
 		return
-	var y = Tween.interpolate_value(start_y, orig_pos.y - start_y, progress, 1.0, Tween.TRANS_CUBIC, Tween.EASE_OUT)
-	part.position = Vector3(orig_pos.x, y, orig_pos.z)
+	var lowered: float = Tween.interpolate_value(0.0, 1.0, progress, 1.0, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
+	part.position = orig_pos + Vector3(0, height * (1.0 - lowered), 0)
+	_set_opacity(part, clampf(progress / DROP_FADE, 0.0, 1.0))
+
+## How far above its place a drop_in starts, in metres: scaled to the piece's
+## own height so a cornice stone and a roof truss both read, clamped so neither
+## starts implausibly close or out of frame.
+static func drop_height(part: Node3D) -> float:
+	var h := 0.0
+	if part.has_meta("original_aabb"):
+		var basis := Basis()
+		if part.has_meta("original_transform"):
+			basis = (part.get_meta("original_transform") as Transform3D).basis
+		h = (Transform3D(basis, Vector3.ZERO) * (part.get_meta("original_aabb") as AABB)).size.y
+	return clampf(DROP_CLEARANCE + DROP_PER_METRE * h, DROP_MIN, DROP_MAX)
 
 static func _rise_up_instant(part: Node3D, progress: float) -> void:
 	var orig_pos: Vector3 = part.get_meta("original_pos")
@@ -545,54 +604,53 @@ static func _fade_targets(part: Node3D) -> Array:
 		return [part]
 	return part.find_children("*", "MeshInstance3D", true, false)
 
+## Hidden until it starts (like every other type -- it used to sit visible at
+## alpha 0 from day 0, paying for a transparent pass for nothing).
 static func _fade_in_instant(part: Node3D, progress: float) -> void:
-	part.visible = true
 	part.scale = part.get_meta("original_scale")
 	part.position = part.get_meta("original_pos")
-	for mesh_node in _fade_targets(part):
-		var mat = mesh_node.get_active_material(0)
-		if not mat:
-			continue
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		if progress <= 0.0:
-			mat.albedo_color.a = 0.0
-		elif progress >= 1.0:
-			mat.albedo_color.a = 1.0
-		else:
-			mat.albedo_color.a = Tween.interpolate_value(0.0, 1.0, progress, 1.0, Tween.TRANS_LINEAR, Tween.EASE_IN_OUT)
+	part.visible = progress > 0.0
+	_set_opacity(part, clampf(progress, 0.0, 1.0) if progress > 0.0 else 1.0)
 
 static func _fade_out_instant(part: Node3D, progress: float) -> void:
 	part.scale = part.get_meta("original_scale")
 	part.position = part.get_meta("original_pos")
-	if progress >= 1.0:
-		part.visible = false
-	else:
-		part.visible = true
+	part.visible = progress < 1.0
+	_set_opacity(part, 1.0 - clampf(progress, 0.0, 1.0) if progress < 1.0 else 1.0)
+
+## Sets every material on the part (all surfaces, all descendant meshes) to
+## `fraction` of its own original opacity. At 1.0 the material gets its original
+## transparency mode back, so a fully-present opaque part leaves the transparent
+## render pass -- formwork made that matter: a panel holding through the pour
+## sits at progress 0 of its strip for most of the schedule, and leaving ~160 of
+## them alpha-blended costs a sorted transparent pass for solid geometry.
+##
+## Materials are per-part (SequenceManager.make_materials_unique()), so the
+## original values can live on the material itself; Resource.duplicate() carries
+## them along on the next Start Preview.
+static func _set_opacity(part: Node3D, fraction: float) -> void:
 	for mesh_node in _fade_targets(part):
-		var mat = mesh_node.get_active_material(0)
-		if not mat:
-			continue
-		if progress <= 0.0:
-			# Fully opaque, so drop back out of the transparent render pass rather
-			# than staying in it at alpha 1. Formwork made this matter: a panel
-			# holding through the pour sits at progress 0 of its strip for most of
-			# the schedule, and leaving ~160 of them alpha-blended costs a sorted
-			# transparent pass for geometry that is completely solid.
-			mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-			mat.albedo_color.a = 1.0
-			continue
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		if progress >= 1.0:
-			mat.albedo_color.a = 0.0
-		else:
-			mat.albedo_color.a = Tween.interpolate_value(1.0, -1.0, progress, 1.0, Tween.TRANS_LINEAR, Tween.EASE_IN_OUT)
+		for i in mesh_node.get_surface_override_material_count():
+			var mat = mesh_node.get_active_material(i)
+			if not (mat is BaseMaterial3D):
+				continue
+			if not mat.has_meta(_ORIGINAL_ALPHA_META):
+				mat.set_meta(_ORIGINAL_ALPHA_META, mat.albedo_color.a)
+				mat.set_meta(_ORIGINAL_TRANSPARENCY_META, mat.transparency)
+			var base_alpha: float = mat.get_meta(_ORIGINAL_ALPHA_META)
+			if fraction >= 1.0:
+				mat.transparency = mat.get_meta(_ORIGINAL_TRANSPARENCY_META)
+				mat.albedo_color.a = base_alpha
+			else:
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				mat.albedo_color.a = base_alpha * maxf(fraction, 0.0)
 
 static func _install_instant(part: Node3D, progress: float) -> void:
 	var orig_pos: Vector3 = part.get_meta("original_pos")
 	var orig_scale: Vector3 = part.get_meta("original_scale")
 
 	part.scale = orig_scale
-	var ground_start: Vector3 = part.get_meta("install_ground_start", Vector3(orig_pos.x + 15, 0, orig_pos.z))
+	var ground_start: Vector3 = part.get_meta("install_ground_start", orig_pos + Vector3(15, 0, 0))
 	var hover_height = orig_pos.y + 5.0
 
 	if progress <= 0.0:

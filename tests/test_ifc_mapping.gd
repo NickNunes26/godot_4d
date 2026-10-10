@@ -104,11 +104,21 @@ func _init() -> void:
 	_check("K1 window merged over both parts", [by_id["K1"].start_date, by_id["K1"].duration_days], ["2026-03-02", 5])
 	_check("K1 type from rule", by_id["K1"].type, "fill_up")
 	_check("K1 batched (not a staggered type)", by_id["K1"].batch, true)
-	_check("K2 falls back to default type", by_id["K2"].type, "scale_up")
+	_check("K2 inferred from its name (steel column -> lifted in)", [by_id["K2"].type, by_id["K2"].batch], ["drop_in", false])
 	var no_rules := IfcMapping.new()
 	no_rules.default_type = "install"
 	_check("a value that is a type name needs no rule", IFCScheduleGenerator._type_for(" Fill_Up ", no_rules), "fill_up")
-	_check("any other value still gets the default", IFCScheduleGenerator._type_for("concrete", no_rules), "install")
+	_check("a recognisable value is inferred", IFCScheduleGenerator._type_for("concrete", no_rules), "fill_up")
+	_check("the id/label are read too", IFCScheduleGenerator._type_for(null, no_rules, ["C08_Zocalo", "Zócalo de mampostería"]), "build_up")
+	_check("an unrecognisable value gets the default", IFCScheduleGenerator._type_for("other", no_rules), "install")
+	no_rules.infer_types = false
+	_check("inference off: back to the default", IFCScheduleGenerator._type_for("concrete", no_rules), "install")
+	_check("inference off: a type name still counts", IFCScheduleGenerator._type_for("fill_up", no_rules), "fill_up")
+	no_rules.infer_types = true
+	var no_infer := IFCScheduleGenerator.generate(container, IfcMapping.from_dict(m.to_dict().merged({"infer_types": false}, true)))
+	_check("inference off in generate(): K2 gets the default", no_infer.steps[0].actions.filter(func(a): return a.id == "K2")[0].type, "scale_up")
+	_check("infer_types round-trips", IfcMapping.from_dict({"infer_types": false}).infer_types, false)
+	_check("old profiles infer by default", IfcMapping.from_dict({}).infer_types, true)
 	_check("no rule matches: the value's own name", IFCScheduleGenerator._type_for("rise_up", m), "rise_up")
 	no_rules.type_rules = [{"contains": "rise", "type": "fill_up"}]
 	_check("a rule wins over the value's own name", IFCScheduleGenerator._type_for("rise_up", no_rules), "fill_up")
@@ -175,6 +185,9 @@ func _init() -> void:
 	_check("dialog result: element id", got.element_id, ["Ids", "Code"])
 	_check("dialog result: duration", got.duration, ["Plan", "Days"])
 	_check("dialog result: rule", got.type_rules, [{"contains": "slab", "type": "fill_up"}])
+	_check("dialog infers by default", got.infer_types, true)
+	dlg._infer_types.button_pressed = false
+	_check("dialog result: inference off", dlg._build_mapping().infer_types, false)
 	_check("dialog result: ignore dates", got.ignore_dates, ["1900-01-01", "2000-01-01"])
 	var locked := IfcMappingDialog.new()
 	root.add_child(locked)

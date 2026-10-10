@@ -24,6 +24,7 @@ var _duration: OptionButton
 var _display_name: OptionButton
 var _type_source: OptionButton
 var _default_type: OptionButton
+var _infer_types: CheckBox
 var _rules_box: VBoxContainer
 var _ignore_dates: LineEdit
 var _rule_rows: Array = [] # [{contains: LineEdit, type: OptionButton, row: Control}]
@@ -68,13 +69,20 @@ func setup(scan: Dictionary, initial: IfcMapping, lock_element_id: bool = false)
 
 	box.add_child(HSeparator.new())
 	var type_title := Label.new()
-	type_title.text = "Animation type (optional)"
+	type_title.text = "Animation type (optional -- usually nothing to do here)"
 	box.add_child(type_title)
-	_type_source = _picker(box, "Decide type from", "Rules below are matched against this property's value.", _base.type_source, "text", true)
+	_infer_types = CheckBox.new()
+	_infer_types.text = "Infer the type from the activity name (\"Hormigonado...\" pours, \"Mampostería...\" builds up, \"Excavación...\" digs)"
+	_infer_types.tooltip_text = "Reads each activity's code and display name (Spanish, Galician, Portuguese, English) and picks the animation that fits the work.
+A type stated by the model (the property below, or a rule) always wins over the guess."
+	_infer_types.button_pressed = _base.infer_types
+	box.add_child(_infer_types)
+	_type_source = _picker(box, "Type stated by property", "Only if your model has a property naming the type (fill_up, build_up...) or something rules can translate. Leave (none) to rely on the activity name.", _base.type_source, "text", true)
 
 	var default_row := HBoxContainer.new()
 	var default_label := Label.new()
-	default_label.text = "Default type"
+	default_label.text = "Fallback type"
+	default_label.tooltip_text = "Used when nothing above decides an action's type."
 	default_label.custom_minimum_size.x = 160
 	default_row.add_child(default_label)
 	_default_type = OptionButton.new()
@@ -192,6 +200,7 @@ func _build_mapping() -> IfcMapping:
 	m.display_name = _selected_path(_display_name)
 	m.type_source = _selected_path(_type_source)
 	m.default_type = str(_default_type.get_item_metadata(_default_type.selected))
+	m.infer_types = _infer_types.button_pressed
 	for entry in _rule_rows:
 		var text := (entry.contains as LineEdit).text.strip_edges()
 		if not text.is_empty():

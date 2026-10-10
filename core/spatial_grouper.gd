@@ -58,9 +58,23 @@ func _compute(commander_prefix: String, child_prefixes: Array, building_parts: D
 
 	return result
 
+## Pieces whose bases are within this many metres of each other count as one
+## level, and are then ordered by plan position.
+const LEVEL_BAND := 0.5
+
+## Placement order for staggered parts: bottom-up by level, then across the plan
+## (z, then x). Building goes upwards -- a quoin is set on the one below it, a
+## first-floor surround after the ground-floor one -- and ordering by plan alone
+## had pieces placed above ones still to come, which a crane lift then had to
+## pass through on its way down.
 static func sort_by_position(parts: Array, building_parts: Dictionary) -> Array:
+	var level := {}
+	for name in parts:
+		level[name] = floori(_base_height(building_parts[name]) / LEVEL_BAND)
 	var sorted = parts.duplicate()
 	sorted.sort_custom(func(a, b):
+		if level[a] != level[b]:
+			return level[a] < level[b]
 		var pa: Vector3 = building_parts[a].get_meta("original_pos")
 		var pb: Vector3 = building_parts[b].get_meta("original_pos")
 		if pa.z != pb.z:
@@ -68,3 +82,12 @@ static func sort_by_position(parts: Array, building_parts: Dictionary) -> Array:
 		return pa.x > pb.x
 	)
 	return sorted
+
+## World height of a part's underside at its finished placement.
+static func _base_height(part: Node3D) -> float:
+	if part.has_meta("original_transform") and part.has_meta("original_aabb"):
+		var box: AABB = part.get_meta("original_transform") * (part.get_meta("original_aabb") as AABB)
+		return box.position.y
+	if part.has_meta("original_transform"):
+		return (part.get_meta("original_transform") as Transform3D).origin.y
+	return 0.0

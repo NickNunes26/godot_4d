@@ -30,6 +30,7 @@ const TimelineUIScene = preload("res://addons/construction_4d_tool/runtime/timel
 @onready var _formwork_pour_spin: SpinBox = $VBox/FormworkBar/FormworkPourSpin
 @onready var _pour_check: CheckBox = $VBox/PourBar/PourCheck
 @onready var _pour_grid: GridContainer = $VBox/PourGrid
+@onready var _infer_types_button: Button = $VBox/InspectorButtons/InferTypesButton
 @onready var _recalculate_button: Button = $VBox/InspectorButtons/RecalculateButton
 @onready var _reload_button: Button = $VBox/InspectorButtons/ReloadButton
 @onready var _save_button: Button = $VBox/InspectorButtons/SaveButton
@@ -125,6 +126,10 @@ func _ready() -> void:
 	_start_button.pressed.connect(_on_start_pressed)
 	_stop_button.pressed.connect(_on_stop_pressed)
 	_recalculate_button.pressed.connect(_on_recalculate_pressed)
+	_infer_types_button.pressed.connect(_on_infer_types_pressed)
+	_infer_types_button.tooltip_text = "Sets every row's Tipo and Cadencia from what the activity is called: \"Hormigonado de zapatas\" pours, \"Mampostería\" builds up, \"Excavación\" digs, \"Carpintería\" fades in...
+
+Overwrites the rows it recognises (including hand-picked types); rows whose name says nothing it knows are left alone. The Output panel lists every change. Then Recalculate, and Save to JSON to keep it."
 	_reload_button.pressed.connect(_on_reload_pressed)
 	_save_button.pressed.connect(_on_save_pressed)
 	_capture_camera_button.pressed.connect(_on_capture_camera_pressed)
@@ -165,6 +170,14 @@ Off unless a project turns it on -- see 08_POUR_STREAM.md. Live playback only; s
 	edit_mapping_button.tooltip_text = "Choose which IFC properties are the element id, dates and animation type."
 	edit_mapping_button.pressed.connect(_on_edit_ifc_mapping_pressed)
 	buttons_container.add_child(edit_mapping_button)
+
+	var equipment_button = Button.new()
+	equipment_button.text = "Maquinaria"
+	equipment_button.tooltip_text = "Adds the site plant to the scene -- tower crane, mobile crane, excavator and truck -- at the positions proposed from the model, so you can see and move them.
+
+Without this, Play adds the same machines automatically (SequenceManager > Auto Equipment). Move the TowerCraneSite / ExcavatorSite markers to place them; crane height and jib are on the SiteEquipment node. Pressing it again re-proposes the positions."
+	equipment_button.pressed.connect(_on_equipment_pressed)
+	buttons_container.add_child(equipment_button)
 
 	_terrain_panel = TerrainPanel.new()
 	$VBox.add_child(_terrain_panel)
@@ -210,6 +223,21 @@ func _find_sequence_manager(node: Node) -> Node:
 		if found:
 			return found
 	return null
+
+func _on_equipment_pressed() -> void:
+	if _preview_active:
+		stop_preview()
+	var scene_root := EditorInterface.get_edited_scene_root()
+	if not _sequence_manager or not scene_root:
+		push_warning("Build4D: open a scene with a SequenceManager first.")
+		return
+	_sequence_manager.load_json()
+	var eq := SiteEquipment.propose(_sequence_manager, scene_root)
+	if eq:
+		EditorInterface.mark_scene_as_unsaved()
+		EditorInterface.get_selection().clear()
+		EditorInterface.get_selection().add_node(eq)
+		print("Build4D: site equipment proposed -- tower crane %.1f m under the jib, %.0f m jib. Move the TowerCraneSite / ExcavatorSite markers to place them." % [eq.tower_height, eq.jib_length])
 
 func _on_start_pressed() -> void:
 	start_preview()
@@ -261,6 +289,7 @@ func start_preview() -> void:
 	_warning_label.visible = true
 	_start_button.disabled = true
 	_stop_button.disabled = false
+	_infer_types_button.disabled = false
 	_recalculate_button.disabled = false
 	_reload_button.disabled = false
 	_save_button.disabled = false
@@ -295,6 +324,7 @@ func stop_preview() -> void:
 			sun.set("_date", {})
 	# The edited scene shows the finished ground, not wherever preview left it.
 	ConstructionTerrain.reset_all(get_tree())
+	SiteEquipment.reset_all(get_tree())
 	_sun_snapshot.clear()
 
 	# Generated formwork is a view of the schedule, not part of the scene, and
@@ -314,6 +344,7 @@ func stop_preview() -> void:
 	_warning_label.visible = false
 	_stop_button.disabled = true
 	_start_button.disabled = _sequence_manager == null
+	_infer_types_button.disabled = true
 	_recalculate_button.disabled = true
 	_reload_button.disabled = true
 	_save_button.disabled = true
@@ -487,6 +518,38 @@ func _set_schedule_dirty(dirty: bool) -> void:
 
 func _on_schedule_edited() -> void:
 	_set_schedule_dirty(true)
+
+## "Auto types": TaskClassifier over every action's id and label. Writes into
+## sequence_data like any inspector edit -- dirty until Recalculate, lost
+## without Save to JSON.
+func _on_infer_types_pressed() -> void:
+	if not _sequence_manager:
+		return
+	var changed: Array = []
+	var unknown: Array = []
+	for step in _sequence_manager.sequence_data.get("steps", []):
+		for action in step.get("actions", []):
+			var id := ConstructionSchedule._action_id(action)
+			var guess := TaskClassifier.classify(TaskClassifier.action_text(action))
+			if guess.is_empty():
+				unknown.append(id)
+				continue
+			if str(action.get("type", "")) != guess.type or action.get("batch") != guess.batch:
+				changed.append("  %s: %s -> %s (\"%s\")" % [id, _type_and_cadence(action.get("type", "?"), action.get("batch")), _type_and_cadence(guess.type, guess.batch), guess.keyword])
+			action["type"] = guess.type
+			action["batch"] = guess.batch
+	print("Auto types: %d action(s) changed, %d not recognised." % [changed.size(), unknown.size()])
+	for line in changed:
+		print(line)
+	if not unknown.is_empty():
+		print("  Not recognised (type left as it was): %s" % ", ".join(unknown))
+	_inspector.build(_sequence_manager, _current_schedule)
+	_on_schedule_edited()
+
+static func _type_and_cadence(type, batch) -> String:
+	if batch == null:
+		return str(type)
+	return "%s/%s" % [type, "together" if batch else "one by one"]
 
 func _on_recalculate_pressed() -> void:
 	_rebuild_schedule()

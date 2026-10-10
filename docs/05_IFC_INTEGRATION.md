@@ -59,9 +59,10 @@ float32 at map magnitude.
 | Start date | yes | The action's `start_date`. |
 | End date **or** Duration (days) | one of them | Window end, or its length (a duration counts calendar days, inclusive of the start). |
 | Display name | no | Written into the action's `comment`. |
-| Decide type from | no | The property the type rules below are matched against. |
-| Default type | — | Animation type for an action no rule matches (`scale_up` unless you change it). |
-| Type rules | no | Ordered "value contains *text* → *type*"; the first match wins, case-insensitive. A value that no rule matches but that is itself a type name (`fill_up`) is used as that type; only other values fall back to the default type. |
+| Infer the type from the activity name | — | On by default (`infer_types`). When nothing below states a type, `TaskClassifier` picks it from the type value, the Element ID and the display name. See `11_TYPES_REALISM_CLASHES.md`. |
+| Type stated by property | no | The property the type rules below are matched against (shown as *Decide type from* before 2026-10-10). |
+| Fallback type | — | Animation type for an action nothing else decides (`scale_up` unless you change it). |
+| Type rules | no | Ordered "value contains *text* → *type*"; the first match wins, case-insensitive. A value that no rule matches but that is itself a type name (`fill_up`) is used as that type; other values go to name inference, then the fallback type. |
 | Ignore dates equal to | no | Placeholder dates a model uses for "not scheduled". Empty unless you add some. |
 
 Properties are addressed by their **exact path** (`property set / property`), never by suffix, so
@@ -116,7 +117,8 @@ GDIFC's axes (verified on Godot 4.6.2): IFC (x = east, y = north, z = up) arrive
   the adapter names those `<zone>_<original name>`. Previously every such part got its zone,
   which matched nothing for a part that had an id: that part stayed hidden all run.
 - `batch` is written explicitly: `true` for every type except `install` and `drop_in` (discrete
-  units placed one after another). One id covering several meshes normally means one operation
+  units placed one after another) — or, when the type was inferred from the name, whatever the
+  classifier's rule says (planting and windows one by one, pours together). One id covering several meshes normally means one operation
   split for modelling convenience.
 - `excluded_prefixes` and `static_prefixes` you added by hand are **carried forward** across
   regeneration.

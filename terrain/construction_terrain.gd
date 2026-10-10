@@ -215,6 +215,33 @@ func height_at(e: float, n: float) -> float:
 		return NAN
 	return _grading.height_at(e, n) if _grading else data.height_at(e, n)
 
+## Ground height under a world point, as a world Y (platforms included); NAN
+## off the grid or with no data.
+func world_height_at(p: Vector3) -> float:
+	if not data or not is_inside_tree():
+		return NAN
+	# Asked before this node's own _ready() (a SequenceManager earlier in the
+	# tree placing its equipment): the platforms are not graded yet.
+	if not _grading and not platforms.is_empty() and data.grid_n >= 2 and data.heights.size() == data.grid_n * data.grid_n:
+		update_placement()
+		_grading = TerrainGrading.compute(data, platforms, _container_to_terrain())
+	var l := global_transform.affine_inverse() * p
+	var h := height_at(l.x + data.center_e, data.center_n - l.z)
+	if is_nan(h):
+		return NAN
+	return (global_transform * Vector3(l.x, h, l.z)).y
+
+## world_height_at() from the first terrain in the tree that covers `p`; NAN
+## when none does.
+static func ground_y(tree: SceneTree, p: Vector3) -> float:
+	if not tree:
+		return NAN
+	for t in tree.get_nodes_in_group(GROUP):
+		var h := (t as ConstructionTerrain).world_height_at(p)
+		if not is_nan(h):
+			return h
+	return NAN
+
 ## Shows each platform as far along as its activities are on `day`.
 func follow_schedule(schedule: ConstructionSchedule, day: float) -> void:
 	if not _grading or not _material:
