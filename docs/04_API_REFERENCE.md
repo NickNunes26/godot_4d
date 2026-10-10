@@ -1039,7 +1039,7 @@ Not called directly by application code — `ConstructionSchedule.get_collisions
 
 ## Editor-side classes
 
-Phase 3, all under `addons/construction_4d_tool/editor/`. Documented in depth in `README.md`'s Phase 3 section; listed here so this reference names everything that ships.
+Phase 3, all under `addons/construction_4d_tool/editor/`. Documented in depth in `README.md`'s "The editor dock" section; listed here so this reference names everything that ships.
 
 | Class | File | Role |
 |---|---|---|
@@ -1365,7 +1365,7 @@ The site's plant, placed from the model and driven by the schedule.
   # Geometry, not work. Both match by begins_with(), the same rule target_prefix
   # uses; both are optional and default to empty. Read by
   # SequenceManager.initialize_parts(), and carried across regeneration by
-  # IFCScheduleGenerator.read_existing(). See README.md, "Static and excluded
+  # IFCScheduleGenerator.read_existing(). See README.md, "Parts: registration, static and excluded
   # geometry"
   "static_prefixes": ["ZoneA_"],   # Visible from frame 0, never animated,
                                               #   still collision-checked (as a target)

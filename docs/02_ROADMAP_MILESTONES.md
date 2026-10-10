@@ -1,6 +1,6 @@
 # 4D Construction Tool — Roadmap & Milestones (Phase 1)
 
-> **✅ Status: all of Phase 1 (Milestones -1 through 8) is complete**, matching this plan closely. Known deviations from the specific acceptance-criteria examples below (particularly Milestone 1's day-bucketing math and Milestone 5's bucketing visual test) are called out where they occur — see the "continuous cadence vs. discrete bucketing" note under Milestone 1. Phase 2 (collision detection, complete except crane geometry), Phase 3 (the editor dock) and the five features of `06_PLANNED_FEATURES.md` — all built — are not covered by this doc, which predates all of them; see `README.md` for their as-built status.
+> **Historical: the Phase 1 plan. All of it (Milestones -1 through 8) is complete**, matching this plan closely. The as-built reference is `README.md` (signatures in `04_API_REFERENCE.md`); what is next is `12_FUTURE_WORK.md`. Known deviations from the specific acceptance-criteria examples below (particularly Milestone 1's day-bucketing math and Milestone 5's bucketing visual test) are called out where they occur — see the "continuous cadence vs. discrete bucketing" note under Milestone 1. Phase 2 (collision detection, complete except crane geometry), Phase 3 (the editor dock) and the five features of `06_PLANNED_FEATURES.md` — all built — are not covered by this doc, which predates all of them; see `README.md` for their as-built status.
 
 ## Execution Strategy
 

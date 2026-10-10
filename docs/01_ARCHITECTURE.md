@@ -1,17 +1,19 @@
 # 4D Construction Tool — Detailed Architecture
 
-> **⚠️ Status update**: this is the original pre-implementation design. It shipped largely as designed, with the deviations called out inline below (search for "As-built" callouts). See `README.md` for the full current picture, including Phase 2 (collision detection, complete except crane geometry), the Phase 3 editor dock, the free-fly camera (outside this roadmap), and the five features of `06_PLANNED_FEATURES.md` — all now built.
+> **Historical: the design written before Phase 1.** It shipped largely as designed; deviations
+> are called out inline ("As-built"). The as-built reference is `README.md` (signatures in `04_API_REFERENCE.md`); what is next is `12_FUTURE_WORK.md`. The
+> class contracts below show the design, not today's signatures — in particular
+> `TimelineController` now takes a dictionary of cranes (`set_schedule(schedule, building_parts,
+> cranes := {})`) and `scrub_to(target_day, retract_crane := true)` also updates the terrain, the
+> sun and the site equipment; and `SequenceManager._ready()` does more than the sketch (default
+> view, formwork, site equipment, movie mode).
 >
-> **The core bet in this document held.** None of those five needed a rewrite of anything designed here: they were edits to existing functions, two new root-level JSON keys, a flag, and one self-contained camera subsystem that reads `current_day` and writes a `Camera3D`. The one thing not anticipated is that new features make *latent* bugs load-bearing — the static/excluded geometry feature forced `SequenceManager.initialize_parts()` to become idempotent, which nothing had previously required.
->
-> **Formwork (`07_FORMWORK.md`) is the first feature to add to the core rather than only around it**, and it is worth being precise about how. `ConstructionSchedule` gained the formwork/pour window split and panel scheduling, and `AnimationApplier` gained a `formwork` type. But **`get_part_states()` was not touched** — the design deliberately routed around it, because a part's three-phase lifecycle folds into one 0–1 window (exactly as `_install_instant()` already folds lift/slide/lower) rather than needing `_part_schedules` to become multi-phase. The structural insight is that formwork is *more parts with their own window*, not a new timeline concept: nothing in this document ever required an action's parts to share one. Everything downstream — scrub/play parity, the collision query, the dock, movie mode — needed no changes, so the bet still holds, just less trivially than for the five before it.
-
-> **Module layout (0.4.0):** `core/` holds the schedule maths, animation, collision and formwork
-> classes; `runtime/` the scene-facing nodes and UI; `editor/` the dock; `ifc/` the optional IFC
-> import. File names in the class contracts below map as `<name>.gd` -> `core/` or `runtime/`
-> (see `09_GENERICIZATION.md`, "Path mapping"). `equipment/` (2026-10-10) holds the procedural
-> site plant, `EquipmentModels` and `SiteEquipment`; it reads the schedule and is driven from
-> `TimelineController.scrub_to()` like the terrain (`13_SITE_EQUIPMENT.md`).
+> **The core bet held.** Every later feature — the five of `06_PLANNED_FEATURES.md`, formwork,
+> terrain, site equipment — was built around this design without rewriting it. Formwork is the one
+> that reached into the core, and even it left `get_part_states()` untouched: a panel's three-phase
+> lifecycle folds into one 0–1 window, the way `_install_instant()` folds lift/slide/lower. Files
+> live in `core/`, `runtime/`, `editor/`, `ifc/`, `geo/`, `terrain/` and `equipment/` (see
+> `README.md`, "Layout").
 
 ## System Overview Diagram
 
@@ -521,14 +523,14 @@ Both paths are identical code. The only difference is how `current_day` is set (
 > **✅ As-built** (see `README.md`'s "Collision detection" section for full detail): shipped as `ConstructionSchedule.get_collisions(day, building_parts)` using exactly the `PhysicsDirectSpaceState3D.intersect_shape()` alternative this doc names above — not `Area3D`, and not plain AABB either (an AABB-based version was tried first but replaced: axis-aligned boxes are a loose fit for diagonal/rotated members, e.g. bridge beams, producing false-positive flags on near-misses). Each `MeshInstance3D` part gets a `ConvexPolygonShape3D` hull (`Mesh.create_convex_shape()`) registered as a raw `PhysicsServer3D` area (no `Area3D` scene nodes) on a dedicated collision layer; `get_collisions()` pushes each visible part's live transform to its area via `area_set_transform()` immediately before querying, avoiding the tick-lag `Area3D.get_overlapping_bodies()` would have. Scope was narrowed further than sketched here: only in-transit (mid-`install`) parts are checked as movers, commander+child sibling groups are excluded from flagging each other, only parts with a buildable convex hull participate, and results are deduplicated/reported at the commander level (tracked via `_sibling_groups` / `_part_to_commander`). `get_collisions()` entries still carry `overlap_aabb`/`overlap_volume`, but these are now an AABB-intersection *approximation* of the exact-shape hit (`intersect_shape()` answers "do they overlap", not "by how much") — used only to size the live 3D marker (`CollisionVisualizer`) and break ties among a commander pair's leaf hits, not for the collision boolean itself, which is exact. **Update (trimesh hybrid)**: convex hulls alone couldn't represent concave geometry (an L-bracket, a cut-out) exactly, over-including the concave region as solid. Since concave targets became common in practice (bridge beams with notches/cutouts), each part now also gets a `ConcavePolygonShape3D`/trimesh (`Mesh.create_trimesh_shape()`), registered as the area's shape (the exact target geometry any *other* mover queries against); the convex hull is kept separately and used only as the query shape when that part is itself the mover — Godot's physics engine still doesn't support concave-vs-concave queries, but convex-vs-concave is supported, so this combination is both exact and within engine limits. A related bug was fixed at the same time: `get_collisions()` only synced live transforms for currently-active parts before querying, but didn't filter query *hits* the same way — a part that hadn't started yet kept its area at the default world-origin transform, so a mover sweeping near the origin could register a phantom collision against a part that wasn't really there. **Update**: pause-on-collision during Play and the slider hover tooltip are now both built (Phase 2 is complete except one item — see below). **Not built**: crane geometry isn't in the collision system (only `building_parts` are checked); deliberately deferred, not attempted.
 
 ### Phase 3 (EditorPlugin)
-- `EditorPlugin.gd` creates an instance of `ConstructionSchedule` and `TimelineController` in the editor scene
+- `EditorPlugin.gd` creates an instance of `ConstructionSchedule` and `TimelineController` in the editor scene (built as `plugin.gd`, which mounts `editor/timeline_dock.gd`)
 - Editor dock instantiates `timeline_ui.gd` (or a variant) and connects to the `TimelineController`
 - No changes to core logic; just a new front-end
 
 ### Phase 4 (Plugin Distribution)
 - Copy Phase 1–3 files into `addons/construction_4d_tool/`
 - Add `plugin.cfg` metadata
-- Add `addon_entry.gd` (EditorPlugin entry point for Phase 3)
+- Add `addon_entry.gd` (EditorPlugin entry point for Phase 3) — built as `plugin.gd`
 - Bundle examples
 - GitHub release with `.pck` or source distribution
 

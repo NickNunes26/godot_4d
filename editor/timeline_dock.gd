@@ -5,8 +5,8 @@
 ## SpatialGrouper exactly as they run at runtime -- no core logic is
 ## duplicated here, only the editor-specific wiring (target detection,
 ## preview lifecycle, and the pre/post-preview material snapshot needed to
-## make preview safely reversible). See addons/construction_4d_tool/docs/README.md's Phase 3
-## section for the full design rationale, especially why the dock passes no crane.
+## make preview safely reversible). See docs/README.md, "The editor dock", for the
+## design, including why the preview passes no crane.
 ##
 ## This file is the orchestrator only: preview lifecycle, target detection,
 ## and button wiring. The schedule inspector grid lives in
@@ -277,7 +277,7 @@ func start_preview() -> void:
 	_controller = TimelineController.new()
 	add_child(_controller)
 	# No crane(s) in editor preview -- deliberately out of scope for this
-	# slice, see addons/construction_4d_tool/docs/README.md's Phase 3 section.
+	# slice, see docs/README.md, "The editor dock".
 	_controller.set_schedule(schedule, _sequence_manager.building_parts, {})
 
 	_timeline_ui = TimelineUIScene.instantiate()

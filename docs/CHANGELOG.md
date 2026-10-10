@@ -5,166 +5,124 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## 0.7.0
 
-Animation types read from activity names, construction-like animations, clash detection that
-ignores designed contact, and site equipment: a tower crane, a mobile crane, an excavator (to
-Caterpillar's published 320 measurements) and a truck that come and go with the schedule. Tested
-with Godot 4.6.2 and 4.7.2: 510 checks in nine headless suites, plus the site equipment run on
-the test project's real, levelled terrain. Each item below.
+Animation types read from activity names, animations that look like construction, clash
+detection that ignores designed contact, and site equipment — a tower crane, a mobile crane, an
+excavator built to Caterpillar's published 320 measurements and a truck — that comes and goes with
+the schedule. Tested with Godot 4.6.2 and 4.7.2: 510 checks in nine headless suites, plus the
+site equipment run end to end on the test project's real, levelled terrain.
 
 **Upgrading from 0.6.0.**
 - **Machines appear on Play.** `SequenceManager.auto_equipment` is on by default, so a scene with
-  no `SiteEquipment` now gets one at runtime. Untick **Auto Equipment** on the SequenceManager to
-  turn it off. A scene that already has a `Crane` of its own gets no tower crane.
+  no `SiteEquipment` gets one at runtime. Untick **Auto Equipment** on the SequenceManager to turn
+  it off. A scene that already has a `Crane` of its own gets no tower crane.
 - **Nothing to re-import.** Existing schedules keep their types; **Auto types** in the dock
   re-reads them from the activity names when you want it to.
-- **The guides gained a section.** *Site equipment* / *Maquinaria de obra* is section 10;
-  *Play*, *Record a video* and *Troubleshooting* moved to 11–13.
+- **The guides gained a section.** *Site equipment* / *Maquinaria de obra* is section 10; *Play*,
+  *Record a video* and *Troubleshooting* moved to 11–13.
 
-**Machines stand on the graded ground, clear of what is built** (`equipment/site_equipment.gd`,
-`tests/test_equipment.gd`). Checked end to end on the test project with its downloaded terrain
-levelled from the model (pad and pit). Every machine stands exactly on the terrain surface, and
-the truck follows it over its whole round. Two placements were wrong and are fixed. **The
-excavator** stood 4 m off the drawn edge of the dig, which on the 5 m terrain grid was 1.6 m down
-the pit's bank. It now steps out a metre at a time until its whole track length is on the pad.
-**The mobile crane** for the granary set up on top of the boundary wall, which was built by then:
-its spot only avoided the pieces it was lifting. It now turns round the pieces and steps out until
-it is 5 m clear of everything standing on the day of the lift, and it lifts the granary over the
-wall from outside. 2 new checks.
+### Site equipment
 
-**Excavator to Caterpillar's published measurements, with a real bucket**
-(`equipment/equipment_models.gd`, `equipment/equipment_specs.gd`,
-`equipment/specs/excavator_cat_320.json`, `equipment/site_equipment.gd`, `tests/test_equipment.gd`).
-The Cat 320 technical specification sheet was downloaded and its figures recorded, in millimetres
-as printed, with source, configuration and date: dimensions, front, working ranges, performance,
-cylinders. `EquipmentSpecs` reads them, for the model now and for clash detection later. The
-excavator is rebuilt to them — tracks 4.45 m with idler, sprocket, 8 track and 2 carrier rollers a
-side and grousers; 2.98 m wide; 0.47 m ground clearance; 2.78 m upper frame with deck, house,
-right-hand compartment, hood, handrails at 2.95 m, cab to 2.96 m, counterweight 1.05 m off the
-ground on the 2.83 m tail swing — and gets twin boom rams, a stick ram, a bucket ram with power
-and idler links (solved per pose), and a shaped 1.2 m bucket: curved wrapper, side plates, cutting
-edge, five teeth on adapters, side cutters, wear strips, ears and pins. Boom foot, tip and joint
-limits were fitted so its working range matches the sheet's within 5 % (reach 10.01 m vs 9.86,
-depth 6.74 vs 6.72, cutting height 9.07 vs 9.37); the dig cycle was re-solved against them and the
-truck now loads 7.4 m out. 2,948 triangles: small cylinders now use 8 sides. Also fixed: a bar
-lying along Z got its width turned into a vertical fin (`_orient_strut`). 21 new checks (508 in
-all). Docs: `13_SITE_EQUIPMENT.md` (new "Measurements" section), `04_API_REFERENCE.md`,
-`12_FUTURE_WORK.md`, both guides.
+**A tower crane, a mobile crane, an excavator and a truck, with no setup**
+(`equipment/`, `runtime/sequence_manager.gd`, `runtime/timeline_controller.gd`,
+`editor/timeline_dock.gd`; design and measurements in `docs/13_SITE_EQUIPMENT.md`).
+- `EquipmentModels` builds the four machines from boxes and cylinders (660–3,100 triangles depending on size, flat
+  colours, no assets). `SiteEquipment` places them from the model and on the terrain: the tower
+  crane off the building's back-right corner, its jib (30–75 m) and height (tallest part in reach
+  + 10 m) sized to it; the excavator at the pit's edge with the whole of its tracks on the pad; the
+  mobile crane beside each of its lifts, 5 m clear of everything already built that day.
+- The schedule brings them on and off site through the `TaskClassifier` categories: the tower
+  crane goes up mast section by section before the first structural activity, lowers every
+  `drop_in` piece it can reach, and comes down after the roof; the mobile crane sets up on its
+  outriggers for lifts out of reach or after the tower crane has gone; the excavator digs and
+  loads the truck (reverse in, four buckets, drive off) during excavation and earth fill.
+- The tower crane is a real `Crane`: `install` lifts use it and start from its laydown area
+  (`PickupZone`) instead of 15 m to the side.
+- Created at Play by `SequenceManager.auto_equipment`; the dock's **Maquinaria** button adds it to
+  the scene with two movable markers (`TowerCraneSite`, `ExcavatorSite`). Driven from
+  `TimelineController.scrub_to()`, so scrubbing, the dock preview and Movie Maker all show it.
+- On the test project: crane at the back-right corner, 55 m jib, on site 2027-03-31 → 2027-11-13
+  following 120 pieces; mobile crane for the pergola, granary and cross; every machine on the
+  graded terrain surface; 33 ms to build, 24 µs per frame.
 
-**Site equipment: a tower crane, a mobile crane, an excavator and a truck, with no setup**
-(`equipment/equipment_models.gd`, `equipment/site_equipment.gd`, `runtime/sequence_manager.gd`,
-`runtime/timeline_controller.gd`, `editor/timeline_dock.gd`, `core/construction_schedule.gd`,
-`terrain/construction_terrain.gd`, `tests/test_equipment.gd`). Item 2 of `12_FUTURE_WORK.md`;
-design and measurements in the new `docs/13_SITE_EQUIPMENT.md`. `EquipmentModels` builds the four
-machines from boxes and cylinders (660–3,072 triangles, flat colours, no assets). `SiteEquipment`
-places them from the model — tower crane off the building's back-right corner with its jib (30–75 m)
-and height (tallest part in reach + 10 m) sized to it, excavator at the pit's edge with its truck
-beside it, mobile crane per lift — and brings them on and off site from the `TaskClassifier`
-categories: the tower crane goes up mast section by section before the first structural activity,
-lowers every `drop_in` piece it can reach on its hook, and comes down after the roof; the mobile
-crane sets up on outriggers for lifts out of reach or after the tower crane has gone; the excavator
-digs and loads the truck (reverse in, four buckets, drive off) during excavation and earth fill.
-The tower crane is a real `Crane`, so `install` lifts use it and start from its laydown area
-(`PickupZone`) instead of 15 m to the side. `SequenceManager.auto_equipment` (default on) creates it
-at Play; the dock's new **Maquinaria** button adds it to the scene with two movable markers
-(`TowerCraneSite`, `ExcavatorSite`). Driven from `TimelineController.scrub_to()`, so scrubbing, the
-dock preview and Movie Maker all show it. New: `ConstructionSchedule.source_data`,
-`get_part_window()`; `ConstructionTerrain.world_height_at()`, `ground_y()`. On the test project:
-crane at the back-right corner, 55 m jib, on site 2027-03-31 → 2027-11-13 following 120 pieces;
-mobile crane for the pergola, granary and cross; 33 ms to build, 24 µs per frame. 69 new checks
-(487 in all). Docs: `13_SITE_EQUIPMENT.md`; `12_FUTURE_WORK.md` marks item 2 built; both guides get
-a *Site equipment* / *Maquinaria de obra* section (sections 10–12 renumbered 11–13); README,
-`docs/README.md`, `01_ARCHITECTURE.md`, `04_API_REFERENCE.md` updated.
+**The excavator is a Caterpillar 320 to the published sheet** (`equipment/specs/
+excavator_cat_320.json`, `equipment/equipment_specs.gd`). The sheet's figures are recorded in
+millimetres as printed, with source, configuration and date — dimensions, front, working ranges,
+performance, cylinders — and `EquipmentSpecs` reads them, for the model now and for clash checks
+later. The model is built to them (4.45 m tracks with idler, sprocket and rollers, 2.98 m wide,
+2.83 m tail swing, cab to 2.96 m), has its boom, stick and bucket rams with a solved bucket linkage
+and a shaped 1.2 m bucket (wrapper, side plates, cutting edge, five teeth, side cutters), and its
+joint limits are fitted so its working range is within 5 % of the sheet's (reach 10.01 m vs 9.86,
+depth 6.74 vs 6.72, cutting height 9.07 vs 9.37).
 
-**`drop_in` and `scale_up` look like construction** (`core/animation_applier.gd`,
-`tests/test_animations.gd`). `drop_in` fell a fixed 15 m with a cubic ease-out — fastest at the
-top — and appeared opaque out of nothing; it is now lowered from just above (1.5 m + 1.5 × the
-piece's height, within 2.5–8 m), slow off the hook and slow on landing, fading in over the first
-20 %. `scale_up` grew about the part's centre with an overshoot to ~110 %; it now grows uniformly
-from the middle of its base, never larger than finished (base drift on a rotated part in an
-offset container: 2.86 m before, under 1 mm now). Formwork panels assemble with `scale_up`, so
-they now rise from the ground. **Fades respect the material**: alpha runs to and from each
-material's own alpha on every surface, and its transparency mode is restored at full opacity —
-glass used to finish `fade_in` opaque. `fade_in` is hidden until it starts. The live tweens of
-these four types now drive the instant functions, so Play and scrubbing cannot differ.
-27 new checks; 10 of them fail on the previous code.
+New supporting API: `ConstructionSchedule.source_data`, `get_part_window()`;
+`ConstructionTerrain.world_height_at()`, `ground_y()` (which grade the platforms on demand when
+asked before the terrain's own `_ready()`).
 
-**Documentation**: `docs/11_TYPES_REALISM_CLASHES.md` (as-built: inference rules table generated
-from the code, the animation set, the clash changes with measurements, bottom-up placement) and
-`docs/12_FUTURE_WORK.md` (the to-do list: robust scaffolding/formwork, support equipment — tower
-crane, mobile crane, truck, excavator — and smaller open items). `docs/README.md`,
-`01_ARCHITECTURE.md`, `04_API_REFERENCE.md`, `05_IFC_INTEGRATION.md`, the README and both guides
-point to them.
+### Animation types and animations
 
-**Animation types inferred from the activity name** (`core/task_classifier.gd`,
+**Types inferred from the activity name** (`core/task_classifier.gd`,
 `ifc/ifc_schedule_generator.gd`, `editor/ifc_mapping_dialog.gd`, `editor/timeline_dock.gd`). A
 schedule already says what each task is ("Hormigonado de zapatas", "Mampostería de granito",
 "Excavación de zanjas"), so the type no longer has to be typed against every row or carried as an
 IFC property. `TaskClassifier` reads the action's code and label (Spanish, Galician, Portuguese,
 English; accents, case and `CamelCase_codes` normalised) and picks type and cadence; what is done
-(demolish, dig, pour) outranks what it is done to (a footing, a roof). Used by Generate 4D Schedule
-between the explicit sources (rules, a property whose values are type names) and the fallback
-type, controlled by the mapping's new `infer_types` (on; old profiles read as on). The dock's new
-**Auto types** button applies it to every row of a loaded schedule and logs each change. On the
-Galician test model it recognises all 47 activities and changes the type of 17 whose saved type
-contradicted the name, several plainly wrong (lean concrete fading out, scaffolding "poured").
+(demolish, dig, pour) outranks what it is done to (a footing, a roof). Generate 4D Schedule uses it
+between the explicit sources and the fallback type (the mapping's new `infer_types`, on by
+default); the dock's new **Auto types** button applies it to a loaded schedule and logs each
+change. On the Galician test model it recognises all 47 activities and corrects 17 saved types
+that contradicted the name (lean concrete fading out, scaffolding "poured").
 
-**`build_up` animation type** (`core/animation_applier.gd`). Grows the element from its own base,
-like `fill_up` without the pour. `rise_up`, the only other type for something going up, moves the
-*whole* element up from 10 m below -- through the slab and foundations it stands on -- which is
-what masonry was getting.
+**Types from the model and the plan, and no more phantom crane lifts**
+(`ifc/ifc_schedule_generator.gd`, `editor/schedule_project_xml_io.gd`). A type property whose
+values already are type names (`fill_up`, `rise_up`...) now gives those types with no rules —
+before, such a model got the default type everywhere, and with `install` as the default every
+action became a clash-checked crane lift. Import Project XML sets each action's type and batching
+from the plan's custom text column whose values are type names, found by its values.
 
-**Clash detection no longer flags designed contact; lifts start in the right place**
+**`build_up`**, a new type: grows the element from its own base, like `fill_up` without the
+pour. Masonry was getting `rise_up`, which moves the whole element up from 10 m below — through
+the slab it stands on.
+
+**`drop_in`, `scale_up` and the fades look like construction** (`core/animation_applier.gd`).
+`drop_in` fell a fixed 15 m, fastest at the top, appearing opaque out of nothing; it is now
+lowered from 1.5 m + 1.5 × the piece's height (2.5–8 m), slow off the hook and slow on landing,
+fading in over the first 20 %. `scale_up` grew about the part's centre with an overshoot to ~110 %;
+it now grows from the middle of its base, never larger than finished (formwork panels, which use
+it, now rise from the ground). Fades run to and from each material's own alpha and restore its
+transparency mode — glass used to finish `fade_in` opaque — and `fade_in` is hidden until it
+starts. The live tweens drive the instant functions, so Play and scrubbing cannot differ.
+
+### Clash detection
+
+**Designed contact is no longer a clash; lifts start in the right place**
 (`core/collision_query.gd`, `core/construction_schedule.gd`, `core/spatial_grouper.gd`,
-`runtime/timeline_controller.gd`). Measured on the 663-part Galician model with its `drop_in`
-pieces turned into crane lifts: 189 clash windows over 39 activity pairs before, 79 over 16 after,
-and the full scan went from 159 s to 2.4 s. What changed:
+`runtime/timeline_controller.gd`). On the 663-part Galician model with its stone pieces turned
+into crane lifts: 189 clash windows over 39 activity pairs before, 79 over 16 after; the full scan
+went from 159 s to 2.4 s.
 - Parts a lifted piece touches or overlaps in the *finished* model (a corbel set into its cornice,
-  cornice ends on the roof timbers, neighbouring segments) are recorded once and never reported:
-  that is the design, not the sequence.
+  neighbouring segments) are recorded once and never reported.
 - The mover's hull is inset by 2 cm (`CONTACT_TOLERANCE`), so grazing and coincident faces don't
   count.
-- Parts at near-zero scale (`scale_up` just starting) are skipped. Jolt replaces a singular
-  basis with identity, so they were checked at full size (and logged tens of thousands of
-  warnings per scan).
-- `install_ground_start` is now the part's local start position. It was the world pickup point,
-  assigned as a local position: in any offset container (a georeferenced second model, a model
-  set onto the terrain) every lift started that offset away, metres underground, and every child
-  of a commander unit started on the same point.
-- Staggered parts are placed bottom-up (0.5 m levels), then by plan position. Ordering by plan
-  alone placed upper pieces before lower ones, which a lift then had to pass through.
-- `scan_collisions()` samples only the days a lift is in progress (`get_install_windows()`), and
-  `intersect_shape()` results are no longer silently capped at the number of active parts.
+- Parts at near-zero scale are skipped: Jolt replaced their singular basis with identity and
+  checked them at full size.
+- `install_ground_start` is the part's local start position. It was a world point applied as a
+  local one, so in any offset container every lift started metres away, often underground.
+- Staggered parts are placed bottom-up (0.5 m levels), then across the plan.
+- `scan_collisions()` samples only the days a lift is in progress, and `intersect_shape()` results
+  are no longer capped.
 
-**Animation types from the model and the plan, and no more phantom crane lifts**
-(`ifc/ifc_schedule_generator.gd`, `editor/schedule_project_xml_io.gd`). A "Decide type from"
-property whose values already are type names (`fill_up`, `rise_up`...) now gives those types with no
-rules. Before, such a model with no rules got the default type for every action; with `install` as
-the default that made every action a crane lift, and every crane lift is clash-checked, so
-excavation, rebar and everything else reported clashes against each other. Import Project XML now
-also sets each action's type (and its batching) from the plan's custom text column whose values are
-type names, found by its values rather than its name.
+### Editor and documentation
 
-**Load IFC (4D) creates the SequenceManager** (`editor/timeline_dock.gd`). The node is a
-`Node3D` carrying `runtime/sequence_manager.gd` with no `class_name`, so it cannot be found in
-Add Child Node, and a scene without one used to get its parts under the scene root, where
-Generate 4D Schedule and Edit IFC mapping could not find them (both only warned in the Output).
-The import now adds a `SequenceManager` under the scene root when there is none and imports into
-it as usual.
-
-**The dock no longer draws over the Scene tree** (`editor/timeline_dock.tscn`). Its root was a
-plain `Control` whose `VBox` was anchored to fill it and allowed to grow both ways, with nothing
-clipping it. Once Start Preview added the timeline and the inspector grid, the content needed more
-height than the dock had, and spilled upwards over the Scene tree and downwards past the dock. The
-root is now a `ScrollContainer` (vertical scroll only, clips its content), so the dock keeps its
-size and scrolls instead. Node paths are unchanged (`$VBox/...`), so no code changed.
-
-**Instructions for everybody, in English and Spanish.** The README is now bilingual: each section
-is an English paragraph followed by its Spanish version, with the developer material kept in
-English. Two complete step-by-step guides, [GUIDE.md](../GUIDE.md) and [GUIA.md](../GUIA.md),
-cover installation, preparing the scene, the IFC mapping dialog field by field, the three ways to
-get a schedule (IFC only, IFC + Project XML, an existing JSON), terrain and levelling, the editor
-preview and Schedule Inspector, formwork and scaffolding, playing, recording and sharing a video,
-and a troubleshooting table.
+- **Load IFC (4D) creates the SequenceManager** when the scene has none; parts used to land under
+  the scene root, where Generate 4D Schedule could not find them.
+- **The dock no longer draws over the Scene tree**: its root is a `ScrollContainer`, so a long
+  inspector scrolls instead of spilling out.
+- **Bilingual instructions**: the README is English + Spanish, and two complete step-by-step
+  guides, `GUIDE.md` and `GUIA.md`, cover installation to video, with a troubleshooting table.
+- **Documentation cleaned up**: `docs/README.md` rewritten as a concise as-built reference (the
+  history it had accumulated lives here and in git); new `11_TYPES_REALISM_CLASHES.md`,
+  `12_FUTURE_WORK.md` (the to-do list) and `13_SITE_EQUIPMENT.md`; the original planning documents
+  marked as historical; stale statements corrected against the code.
 
 ## 0.6.0
 

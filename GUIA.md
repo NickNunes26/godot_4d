@@ -18,7 +18,7 @@ Contenido: [1. Qué necesitas](#1-qué-necesitas) · [2. Instalación](#2-instal
 
 ## 1. Qué necesitas
 
-- **Godot 4.6 o posterior** (probado con 4.7.2), versión estándar (no .NET).
+- **Godot 4.6 o posterior** (probado con 4.6.2 y 4.7.2), versión estándar (no .NET).
 - **Tu modelo en IFC** (`.ifc`). Cada elemento debería llevar una propiedad con su código de
   actividad y, a ser posible, sus fechas de inicio y fin o su duración. Los nombres de las
   propiedades dan igual: tú le dices a la herramienta cuáles usar.
@@ -101,8 +101,8 @@ Los tipos de animación son: `fill_up` (hormigonado, se llena desde abajo), `bui
 desde su base, p. ej. mampostería, andamios), `drop_in` (baja hasta su sitio desde unos metros
 más arriba, pieza a pieza), `sink_down` (se hunde y desaparece, p. ej. tierra excavada),
 `fade_in`, `fade_out` (p. ej. desbroce), `scale_up` (crece desde su base, p. ej. plantaciones),
-`rise_up` (todo el elemento sube desde 10 m por debajo), `install` (lo coloca una
-grúa).
+`rise_up` (todo el elemento sube desde 10 m por debajo), `install` (lo coloca una grúa, y se
+comprueba si choca).
 
 Qué elige, a grandes rasgos, la deducción por el nombre: la demolición y el desbroce
 desaparecen; la excavación y la tierra vegetal se hunden; el hormigón, forjados, zapatas y pilares
@@ -316,7 +316,7 @@ proyecto → Display → Window → Size**) es el tamaño del vídeo; 1920 × 10
 | **Import Project XML** está en gris | Pulsa antes **Start Preview**. |
 | Las fechas importadas han desaparecido | Pulsa **Save to JSON** antes de **Stop Preview**. |
 | Una ventana pide asociar tareas de Project | Esos nombres de tarea no son códigos de elemento. Elige la actividad de cada una, o renombra las tareas en Project. |
-| Falla la descarga del terreno | Los servidores españoles fallan a veces; la herramienta reintenta cuatro veces. Pulsa de nuevo **Descargar terreno** más tarde. |
+| Falla la descarga del terreno | Los servidores españoles fallan a veces; la herramienta lo intenta cuatro veces. Pulsa de nuevo **Descargar terreno** más tarde. |
 | El modelo flota o queda enterrado | **Comprobar posición** y después **Asentar en el suelo**, o escribe la **Altura** correcta y **Aplicar origen**. |
 | Los acentos se ven mal (`FormigÃ³n`) en una escena antigua | Vuelve a importar el IFC; la herramienta ya los corrige. |
 | El andamio no se desmonta nunca | Mira el [apartado 9](#9-encofrados-y-andamios). |

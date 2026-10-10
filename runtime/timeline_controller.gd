@@ -37,7 +37,7 @@ var _schedule: ConstructionSchedule = null
 var _building_parts: Dictionary = {}
 # crane name -> Crane, from SequenceManager._find_all_cranes() (or {} for the
 # Phase 3 dock's editor preview, which deliberately previews with no crane --
-# see addons/construction_4d_tool/docs/README.md's Phase 3 section). Which crane services which
+# see docs/README.md, "The editor dock"). Which crane services which
 # install unit is decided once, in ConstructionSchedule._init() (nearest-by-
 # distance, or an action's explicit crane_id) -- this dictionary is only used
 # here to look a unit's already-resolved crane_id back up to its live Crane

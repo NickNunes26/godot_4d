@@ -349,7 +349,7 @@ design. Generated panels must therefore be:
 - **generated before `initialize_parts()`**, so they're registered as parts normally and
   hidden/zero-scaled with everything else.
 
-`initialize_parts()` was already made idempotent for feature 2 (`README.md`, "Static and
+`initialize_parts()` was already made idempotent for feature 2 (`README.md`, "Parts: registration, static and
 excluded geometry"); this is the same discipline applied to the generator that feeds it.
 
 A shared `FormworkBuilder` (`core/formwork_builder.gd`, `RefCounted`) owns this, called
@@ -644,8 +644,8 @@ bar `start_date`, `depends_on`, `batch` and the two geometry lists all cleared.
    so they can't reach the `.tscn`. `ConstructionSchedule` schedules them across the
    formwork window (staggered even when the action batches) and its `target_prefix` loop
    skips them; `CollisionQuery.setup()` skips them too. Wired into `SequenceManager._ready()`
-   and into the dock's Start Preview *and* Recalculate. **Panels do not come off yet — that
-   is step 3**, so the finished model is currently wrapped.
+   and into the dock's Start Preview *and* Recalculate. At this step panels did not come off
+   yet; step 3 added the strip.
 3. ~~**The `formwork` anim_type**~~ — **✅ BUILT 2026-08-21.** `_formwork_instant()` maps
    assemble → hold → strip onto one 0–1 window, reading per-panel boundaries from a
    `formwork_phases` meta and **composing** existing animations (`formwork.type` /

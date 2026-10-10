@@ -54,7 +54,7 @@ var _action_finish_days: Dictionary = {}
 # TimelineController to trigger one crane swing per unit during forward Play.
 # crane_id is "" when `cranes` was empty at _init() time (e.g. the Phase 3
 # dock's editor preview, which deliberately passes no cranes -- see
-# addons/construction_4d_tool/docs/README.md's Phase 3 section) -- TimelineController simply skips
+# docs/README.md, "The editor dock") -- TimelineController simply skips
 # swinging a unit whose crane_id doesn't resolve to a live Crane, the same
 # way it already skips everything when _crane was null pre-multi-crane.
 var _install_units: Array = [] # [{start_day, pickup_pos, target_pos, tracked_part_name, lift_dur, slide_dur, crane_id}]

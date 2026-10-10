@@ -1,9 +1,10 @@
 # 4D Construction Tool — Future work (to-do list)
 
-> **Status: not built.** The planned work, in priority order. Each item records what is wrong or
-> missing today, what a good version needs, and how we would know it is done. When an item is
-> built, move its reasoning into its own numbered doc (as `07_FORMWORK.md` and
-> `11_TYPES_REALISM_CLASHES.md` did) and mark it here.
+> **Status: item 1 and the smaller items open; item 2 built (`13_SITE_EQUIPMENT.md`).** The
+> planned work, in priority order. Each item records what is wrong or missing today, what a good
+> version needs, and how we would know it is done. When an item is built, its reasoning moves
+> into its own numbered doc (as `07_FORMWORK.md`, `11_TYPES_REALISM_CLASHES.md` and
+> `13_SITE_EQUIPMENT.md` did) and it is marked here.
 
 | # | Item | Size |
 |---|---|---|

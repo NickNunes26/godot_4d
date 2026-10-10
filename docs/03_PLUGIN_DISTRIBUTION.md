@@ -1,6 +1,8 @@
 # 4D Construction Tool — Plugin Distribution Strategy
 
-> **Status**: the packaging vision (channels, install paths, versioning) is still forward planning. The addon layout below is now real as of 0.4.0 (see `09_GENERICIZATION.md`); the Phase 3/4 framing elsewhere in this doc predates that. Release channels (GitHub release, Asset Library) are not yet used.
+> **Historical, partly still planning.** The self-contained addon layout became real in 0.4.0
+> and is current (`README.md`, "Layout"); the release channels (GitHub releases, Asset Library)
+> and versioning policy below are still plans. The Phase 3/4 framing predates the build.
 
 ## Vision: From Project to Reusable Plugin
 
@@ -382,9 +384,9 @@ A timeline-based 4D construction visualization plugin for Godot 4.
 
 ## Documentation
 
-- [API Reference](docs/API.md)
-- [Authoring Guide](docs/AUTHORING_GUIDE.md)
-- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- API reference — built as `docs/04_API_REFERENCE.md`
+- Authoring guide — built as the user guides `GUIDE.md` / `GUIA.md`
+- Troubleshooting — a section of those guides
 
 ## License
 
@@ -443,7 +445,7 @@ If you have 21 walls to install over 3 days:
 - [x] Tested on a clean Godot 4.6 project (headless)
 - [x] `.gitignore` / `.gitattributes` set up, MIT licence added
 - [ ] Repository created and initial commit pushed
-- [ ] `docs/AUTHORING_GUIDE.md` and `docs/TROUBLESHOOTING.md` (planned, not written)
+- [x] Authoring guide and troubleshooting — written as `GUIDE.md` / `GUIA.md` instead
 - [ ] Release tagged (`v0.4.0`) and published
 - [ ] Asset Library submission (optional, can be later)
 

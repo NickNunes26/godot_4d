@@ -1,12 +1,9 @@
 # 4D Construction Tool — Planned Features (all built)
 
-> **Status**: **all five are built.** Every section is kept for the reasoning that led to
-> the design and points at `README.md` for what actually shipped; `README.md` is the
-> as-built source of truth. One piece was deliberately deferred rather than built — feature
-> 5's look-at camera targets, noted in its section and in `README.md`'s "Next features". Each section records what is *actually* in the codebase today —
-> verified against the files, with line references — so the implementation doesn't start
-> from guesses. `README.md` remains the as-built source of truth; when one of these
-> ships, move its description there and leave a pointer here.
+> **Historical: the specs of five features, all built.** Each section is kept for the reasoning
+> behind the design and points at the `README.md` section that describes what shipped. Line
+> references describe the code at the time of writing. One piece was deliberately deferred:
+> feature 5's look-at camera targets (`12_FUTURE_WORK.md`).
 
 These five came from real production needs while driving a real IFC model
 through the tool: three are about producing a **presentable video**, two are about
@@ -88,7 +85,7 @@ with no dates still renders without showing 1970.
 
 > **Shipped.** Both root-level lists exist, the `contexto_*` actions are gone (the
 > action count drops accordingly), and the inspector flags zero-match rows and can remove them.
-> Implementation notes are in `README.md`'s "Static and excluded geometry" section; the
+> Implementation notes are in `README.md`'s "Parts: registration, static and excluded geometry" section; the
 > spec below is kept for the reasoning.
 >
 > The three open decisions below were all resolved as the leanings suggested — static
@@ -200,7 +197,7 @@ day 0 to the end, with no collision detection interfering, to record a clean vid
   range via `apply_instant()` — expensive, and pointless for a recording.
 - **Pause-on-collision is a hard gate.** `TimelineController._process()` stops playback
   the instant a live collision exists, and pressing Play again re-triggers it while the
-  collision persists (`README.md`, "What's not built"). In movie mode this would freeze
+  collision persists (`README.md`, "Collision detection"). In movie mode this would freeze
   the video permanently at the first clash.
 
 Playback also never starts on its own — it waits for the Play button, which no one is
@@ -390,7 +387,7 @@ arrive one at a time; both behave the same scrubbing as playing.
 > **Look-at targets are deliberately not built** — the spec's own "possibly a second
 > increment", and not in the acceptance criteria. They need the driver to resolve part
 > names to live positions every frame and reconcile that against the authored rotation.
-> Recorded in `README.md`'s "Next features" as the one open piece.
+> Recorded in `12_FUTURE_WORK.md` as the one open piece.
 >
 > One thing the spec didn't cover: **`fov` is forward-filled** across keyframes that don't
 > specify it. Without that, a track that pulls in to 30° pops back to the scene's own fov
@@ -403,7 +400,7 @@ that's how clashes get inspected.
 
 **Current state**: `free_look_camera.gd` is attached directly to the scene's `Camera3D`
 and owns it completely — WASD/mouse, capture on click, Escape to release
-(`README.md`, "Camera"). It's independent of `TimelineController` and knows nothing about
+(`README.md`, "Default view and the free-fly camera"). It's independent of `TimelineController` and knows nothing about
 dates. There is no camera animation of any kind.
 
 **Design**

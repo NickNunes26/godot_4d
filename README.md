@@ -144,10 +144,11 @@ Después conviértelo en un MP4 ligero con
 - **Levelling / Explanación**: follows the 5 m terrain grid, so pads come out up to 7 m wider than
   drawn, and collision uses the finished ground. / sigue la malla de 5 m del terreno, así que las
   plataformas salen hasta 7 m más anchas de lo dibujado, y la colisión usa el terreno final.
-- **Scale / Escala**: `drop_in` scales its height to each piece (2.5–8 m), but the rise and sink
-  depths and crane heights are fixed metres tuned for buildings. / `drop_in` ajusta su altura a
-  cada pieza (2,5–8 m), pero la profundidad de subida y bajada y las alturas de grúa son metros
-  fijos pensados para edificios.
+- **Scale / Escala**: `drop_in` scales its height to each piece (2.5–8 m) and the tower crane is
+  sized to the building, but the rise and sink depths and the `install` lift path are fixed metres
+  tuned for buildings. / `drop_in` ajusta su altura a cada pieza (2,5–8 m) y la grúa torre se
+  dimensiona según el edificio, pero la profundidad de subida y bajada y la trayectoria de izado
+  (`install`) son metros fijos pensados para edificios.
 - **Timing / Ritmo**: the elements of an action appear along one continuous curve over its whole
   window, not grouped per day. / los elementos de una actividad aparecen a lo largo de una curva
   continua en toda su duración, no agrupados por días.

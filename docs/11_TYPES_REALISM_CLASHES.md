@@ -11,8 +11,9 @@
 >    place.
 > 4. Staggered pieces are **placed bottom-up**.
 >
-> Future work that this review surfaced but did not build — robust scaffolding/formwork and
-> support equipment (cranes, trucks, excavators) — is in `12_FUTURE_WORK.md`.
+> The review also surfaced work it did not build: support equipment (cranes, trucks, excavators),
+> since built (`13_SITE_EQUIPMENT.md`), and robust scaffolding/formwork, still open
+> (`12_FUTURE_WORK.md`, item 1).
 
 ---
 

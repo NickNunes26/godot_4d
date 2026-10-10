@@ -22,12 +22,16 @@ deliberately left, and what is open.
   subclasses (`10_TERRAIN.md`). Test fixtures are invented IFCs.
 - **Verified in a fresh empty project**: every script and scene loads, and the example scene builds
   and progresses through its schedule, with GDIFC absent.
+- **Dialog default paths** for CSV and Project XML derive from `construction_json_path`
+  (`<schedule>.csv`, `<schedule>.xml`, `<schedule>.project_mapping.json`).
+- **Docs** use the current module paths throughout.
 
 ## Decided: leave as is
 
 - **Dock labels are Spanish** (English tooltips carry the underlying field names). No i18n layer.
-- **Animation offsets are absolute metres** (drop height, rise depth, crane hover height and
-  pickup offset). They suit building-scale models; scale-relative derivation is not planned.
+- **Animation offsets are absolute metres** (`rise_up`/`sink_down` depth, the `install` hover
+  height and pickup offset; `drop_in` follows the piece's height but within 2.5–8 m). They suit
+  building-scale models; scale-relative derivation is not planned.
 
 ## Open
 
@@ -36,15 +40,6 @@ deliberately left, and what is open.
 1. **Continuous cadence.** An action's parts are stretched along one continuous curve across its
    whole `duration_days` window rather than partitioned into per-day buckets
    (`README.md`, "Known limitations"). Either fix it or record it as the intended design and close it.
-2. **Default file paths for CSV / Project XML dialogs** are `res://schedule.csv` etc.; better derived
-   from `construction_json_path`'s directory.
-3. **Docs**: `README.md` and the numbered docs still use the historical `4d_plugin/` paths in prose
-   (mapping below) and describe phases from the original build order.
-4. **Asset Library submission** — nothing needed beyond a tagged release once the above is settled.
+2. **Asset Library submission** — nothing needed beyond a tagged release.
 
-## Path mapping for older prose
-
-`4d_plugin/<x>.gd` is now `core/<x>.gd` for `cadence`, `construction_schedule`, `collision_query`,
-`spatial_grouper`, `animation_applier`, `formwork_builder`; and `runtime/<x>.gd` for everything else
-(including `timeline_ui.tscn`). `ifc_integration/` is now `ifc/`.
-`4d_plugin/construction_steps.json` is `res://construction_steps.json`.
+(Before 0.4.0 the files lived in `4d_plugin/` and `ifc_integration/`.)

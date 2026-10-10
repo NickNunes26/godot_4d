@@ -18,7 +18,7 @@ Contents: [1. What you need](#1-what-you-need) · [2. Install](#2-install) ·
 
 ## 1. What you need
 
-- **Godot 4.6 or newer** (tested on 4.7.2), standard (non-.NET) build.
+- **Godot 4.6 or newer** (tested on 4.6.2 and 4.7.2), standard (non-.NET) build.
 - **Your model as an IFC file** (`.ifc`). Each element should carry a property with its activity
   code, and ideally its start and end dates or duration. Any property names work: you tell the
   tool which ones to use.
@@ -301,7 +301,7 @@ Size**) is the video size; 1920 × 1080 is standard.
 | **Import Project XML** is greyed out | Press **Start Preview** first. |
 | Imported dates disappeared | Press **Save to JSON** before **Stop Preview**. |
 | A window asks to map Project tasks | Those task names are not element codes. Pick the action for each, or rename the tasks in Project. |
-| The terrain download fails | The Spanish servers fail now and then; the tool retries four times. Press **Descargar terreno** again later. |
+| The terrain download fails | The Spanish servers fail now and then; the tool tries four times. Press **Descargar terreno** again later. |
 | The model floats or is buried | **Comprobar posición**, then **Asentar en el suelo**, or type the right **Altura** and **Aplicar origen**. |
 | Accents look wrong (`FormigÃ³n`) in an old scene | Re-import the IFC; the tool now repairs them. |
 | Scaffolding never comes down | See [section 9](#9-formwork-and-scaffolding). |

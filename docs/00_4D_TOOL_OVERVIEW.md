@@ -1,6 +1,9 @@
 # 4D Construction Tool — Project Overview
 
-> **⚠️ Status update**: this is the original pre-implementation vision doc. Phase 1 is complete, Phase 2 (collision detection) is complete except crane geometry, Phase 3 (the editor dock) is built, and all five features specified in `06_PLANNED_FEATURES.md` have shipped — see `README.md` for the current as-built picture. The "Current (Today)" section below describes the pre-Phase-1 starting point, not where the project is now.
+> **Historical: the original vision, written before Phase 1.** All four phases were built
+> largely as described here (crane geometry is still not clash-checked), and the addon has since
+> grown terrain, IFC import, formwork, type inference and site equipment. The as-built reference is `README.md` (signatures in `04_API_REFERENCE.md`); what is next is `12_FUTURE_WORK.md`.
+> "Current (Today)" below is the pre-Phase-1 starting point.
 
 ## Vision
 
@@ -99,7 +102,7 @@ This is a **plugin project**, not a one-off animation. The final deliverable is 
 > (`ConstructionSchedule._resolve_duration_days()`), except it's a schedule-layer
 > change rather than inspector-only, so it also works from plain JSON without the dock.
 > Not yet built: inspector panels for `start_date`/`duration_days`/`units_per_day`, and
-> export/import schedule helpers. See `README.md`'s "Phase 3" section for
+> export/import schedule helpers. See `README.md`'s "The editor dock" section for
 > full detail.
 
 ---
@@ -201,7 +204,7 @@ project-root/
 
 ### Phase 1 → Phase 3 Transition
 All Phase 1 classes (`ConstructionSchedule`, `Cadence`, `TimelineController`) are written as **pure logic, no `EditorPlugin` dependencies**. This means:
-- A Phase 3 `EditorPlugin.gd` can instantiate `ConstructionSchedule` and call `get_part_states()` directly
+- A Phase 3 `EditorPlugin` (built as `plugin.gd` + `editor/timeline_dock.gd`) can instantiate `ConstructionSchedule` and call `get_part_states()` directly
 - The same `timeline_ui.gd` can be reused (or slightly modified) as the editor dock's UI
 - No rewrite, only *wrapping* in plugin glue code
 
