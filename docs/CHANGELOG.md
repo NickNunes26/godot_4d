@@ -5,6 +5,25 @@ docs in this folder; `README.md` is the as-built reference.
 
 ## Unreleased
 
+**Excavator to Caterpillar's published measurements, with a real bucket**
+(`equipment/equipment_models.gd`, `equipment/equipment_specs.gd`,
+`equipment/specs/excavator_cat_320.json`, `equipment/site_equipment.gd`, `tests/test_equipment.gd`).
+The Cat 320 technical specification sheet was downloaded and its figures recorded, in millimetres
+as printed, with source, configuration and date: dimensions, front, working ranges, performance,
+cylinders. `EquipmentSpecs` reads them, for the model now and for clash detection later. The
+excavator is rebuilt to them — tracks 4.45 m with idler, sprocket, 8 track and 2 carrier rollers a
+side and grousers; 2.98 m wide; 0.47 m ground clearance; 2.78 m upper frame with deck, house,
+right-hand compartment, hood, handrails at 2.95 m, cab to 2.96 m, counterweight 1.05 m off the
+ground on the 2.83 m tail swing — and gets twin boom rams, a stick ram, a bucket ram with power
+and idler links (solved per pose), and a shaped 1.2 m bucket: curved wrapper, side plates, cutting
+edge, five teeth on adapters, side cutters, wear strips, ears and pins. Boom foot, tip and joint
+limits were fitted so its working range matches the sheet's within 5 % (reach 10.01 m vs 9.86,
+depth 6.74 vs 6.72, cutting height 9.07 vs 9.37); the dig cycle was re-solved against them and the
+truck now loads 7.4 m out. 2,948 triangles: small cylinders now use 8 sides. Also fixed: a bar
+lying along Z got its width turned into a vertical fin (`_orient_strut`). 21 new checks (508 in
+all). Docs: `13_SITE_EQUIPMENT.md` (new "Measurements" section), `04_API_REFERENCE.md`,
+`12_FUTURE_WORK.md`, both guides.
+
 **Site equipment: a tower crane, a mobile crane, an excavator and a truck, with no setup**
 (`equipment/equipment_models.gd`, `equipment/site_equipment.gd`, `runtime/sequence_manager.gd`,
 `runtime/timeline_controller.gd`, `editor/timeline_dock.gd`, `core/construction_schedule.gd`,

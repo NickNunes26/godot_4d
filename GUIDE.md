@@ -235,6 +235,8 @@ names like the animation types (**Auto types**, section 8): "Excavación" brings
   positions (and stops the preview).
 - **The mobile crane** is set up beside each lift's pieces, so it has no marker.
 - **Your own crane**: if the scene already has one, no tower crane is added.
+- **The excavator is to scale**: a Caterpillar 320 built to the manufacturer's published
+  dimensions, reaching as far and as deep as the real one (`equipment/specs/`).
 - **No machines**: select the SequenceManager and untick **Auto Equipment** (and delete
   SiteEquipment if you added one).
 - The machines are for show: they are not clash-checked and are not in the schedule.

@@ -4,7 +4,7 @@
 > (`EquipmentModels`), `equipment/site_equipment.gd` (`SiteEquipment`); hooks in
 > `runtime/sequence_manager.gd`, `runtime/timeline_controller.gd`, `editor/timeline_dock.gd`,
 > `core/construction_schedule.gd`, `terrain/construction_terrain.gd`. Tests:
-> `tests/test_equipment.gd` (69 checks).
+> `tests/test_equipment.gd` (90 checks). Measurements: `equipment/specs/` (`EquipmentSpecs`).
 
 ## What you get
 
@@ -32,16 +32,50 @@ and flat colours: yellow plant, white truck cab, grey truck body, concrete count
 
 | Machine | Envelope as built | Moving parts (node names) | Triangles |
 |---|---|---|---|
-| **Tower crane**, flat-top | 1.6 m square lattice mast in ~3 m sections; jib length and height from the site (below); counter-jib 0.3 × jib (10–22 m) with walkway, winch and concrete blocks; cab at the slewing ring | `Arm` (slews; jib along +X), `Track` (trolley), `Rope` (Y scale = length), `Hook`, `PickupZone`, `Mast/Section<i>` | ~3,000 (55 m jib) |
-| **Mobile crane**, all-terrain | 4-axle carrier 11.6 × 2.55 m; carrier cab; superstructure with crane cab and counterweight; 4-section telescopic boom 13.0 → 41.8 m; four outriggers to 3.6 m each side, jacks and pads | `Slew`, `Slew/Boom`, `…/Section1..3`, `…/Tip`, `Outrigger0..3`, `Hook`, `Rope` | 2,208 |
+| **Tower crane**, flat-top | 1.6 m square lattice mast in ~3 m sections; jib length and height from the site (below); counter-jib 0.3 × jib (10–22 m) with walkway, winch and concrete blocks; cab at the slewing ring | `Arm` (slews; jib along +X), `Track` (trolley), `Rope` (Y scale = length), `Hook`, `PickupZone`, `Mast/Section<i>` | 2,916 (50 m jib) |
+| **Mobile crane**, all-terrain | 4-axle carrier 11.6 × 2.55 m; carrier cab; superstructure with crane cab and counterweight; 4-section telescopic boom 13.0 → 41.8 m; four outriggers to 3.6 m each side, jacks and pads | `Slew`, `Slew/Boom`, `…/Section1..3`, `…/Tip`, `Outrigger0..3`, `Hook`, `Rope` | 2,028 |
 | **Truck**, rigid 3-axle tipper | 9.0 × 2.5 × 3.0 m; cab, chassis, tipping body (50°) with a soil load | `Body`, `Body/Load` | 660 |
-| **Excavator**, ~20 t crawler | Tracks 4.6 m long, 0.6 m shoes, 3.0 m wide; house 2.7 m wide, 2.8 m tail swing; cab top 3.0 m; banana boom 5.7 m, stick 2.9 m, ~1 m³ bucket | `Upper` (slews), `Upper/Boom`, `…/Stick`, `…/Bucket`, `Upper/BoomRam` | 744 |
+| **Excavator**, Caterpillar 320 (~22 t), to the published sheet | Tracks 4.45 m long (3.65 m idler to sprocket), 2.38 m gauge, 0.6 m shoes, 2.98 m wide, 0.47 m ground clearance, 8 track and 2 carrier rollers a side; upper frame 2.78 m wide, counterweight 1.05 m off the ground, 2.83 m tail swing, cab top 2.96 m, handrails 2.95 m; banana boom 5.70 m pin to pin, stick 2.9 m; 1.2 m, 1.19 m³ bucket, 1.57 m tip radius, curved wrapper, side plates, cutting edge, five teeth on adapters, side cutters, wear strips; twin boom rams, stick ram, bucket ram with power and idler links | `Undercarriage`, `Upper` (slews), `Upper/Boom`, `…/Stick`, `…/Bucket`, `…/Bucket/Load`, `Upper/BoomRamL`/`R`, `Upper/Boom/StickRam`, `…/Stick/BucketRam`, `…/PowerLink`, `…/IdlerLink` | 2,948 |
 
 Posing goes through static helpers so callers never walk the hierarchy:
 `pose_mobile_crane(root, slew, luff, extend, outriggers, hook_drop)`,
 `pose_truck(root, tip, load)`, `pose_excavator(root, slew, boom, stick, bucket, loaded)`.
-`excavator_teeth()` gives the bucket's position for a pose, which is how the dig cycle was tuned and
-how the test checks it.
+`excavator_teeth()` and `excavator_bucket_pin()` give the bucket's position for a pose, which is
+how the dig cycle was solved and how the test checks it. The excavator's joints are clamped to
+limits fitted to Caterpillar's working ranges (next section); the rams and the bucket linkage
+follow every pose (the linkage joint is solved as the intersection of the idler and power links).
+Small cylinders (pins, rollers) use 8 sides instead of 14, which is what keeps the excavator under
+3,000 triangles with all of that.
+
+## Measurements
+
+The excavator is sized from real published figures, kept in
+`equipment/specs/excavator_cat_320.json` and read through `EquipmentSpecs`:
+
+- **Source**: Caterpillar's *320 Hydraulic Excavator — Technical Specifications* (the PDF served by
+  a Cat dealer, retrieved 2026-10-10; the URL and pages are in the file), configuration reach boom
+  5.7 m, R2.9B1 stick, 1.19 m³ HD bucket, 600 mm shoes, 4.2 t counterweight, long undercarriage.
+  The only figure not from that sheet is the overall track length (4.45 m), from a dealer listing,
+  marked as such.
+- **Contents**, in millimetres as printed: dimensions (cab, FOGS and handrail heights, shipping
+  height and length three ways, upper-frame width, tail swing radius, counterweight and ground
+  clearance, track length, gauge and width, shoe count and rollers), the front (boom, stick, bucket
+  width, capacity, tip radius, weight), the working ranges (maximum digging depth 6.72 m, reach at
+  ground line 9.86 m, cutting height 9.37 m, loading height 6.49 m, minimum loading height 2.17 m,
+  2.44 m level-bottom depth 6.55 m, vertical wall depth 5.19 m), performance (swing 11.3 rpm,
+  travel 5.7 km/h, digging forces, operating weight 21.9 t) and the hydraulic cylinders' bores and
+  strokes.
+- **How the model uses them**: the dimensions are constants in `EquipmentModels` (`EXC_*`), and the
+  test reads the JSON and checks every one against the built model. The boom foot, boom tip and
+  joint limits were fitted (a grid search over the model's own kinematics) so that the model's
+  working range lands on Caterpillar's: reach at ground line 10.01 m (Cat 9.86), digging depth
+  6.74 m (6.72), cutting height 9.07 m (9.37) — all within 5 %, which the test asserts via
+  `EquipmentModels.excavator_envelope()`.
+- **For clash detection later**: the volumes a check needs are in the file as the manufacturer
+  states them, independent of the model — the swept front (working ranges, about the slew centre),
+  the tail swing circle (2.83 m) and the transport envelope (9.53 × 2.98 × 3.16 m).
+  `EquipmentSpecs.metres(id, section, key)` returns any of them in metres. Other machines can be
+  added the same way: one JSON per machine in `equipment/specs/`.
 
 **The tower crane is a real `Crane`.** Built with `as_crane = true`, its root runs
 `runtime/crane.gd` and carries the node names that script looks for, so nothing in the crane code
@@ -73,7 +107,7 @@ scene, each machine stands on the terrain height at its own spot instead
   at least 18 m. **Laydown**: 10 m beside the mast, the first of four spots clear of the building.
 - **Excavator**: 4 m off the front (+Z) edge of the pit, mid-way along it, facing in. The pit is the
   dig parts that go more than 0.5 m below ground; stripping topsoil off the whole plot is excavator
-  work too, but the machine belongs at the hole. Its truck loads on its right (7.8 m out, beyond the
+  work too, but the machine belongs at the hole. Its truck loads on its right (7.4 m out, beyond the
   2.8 m tail swing) and drives off behind it.
 - **Mobile crane**: per job, outside the pieces on the side away from the building — the pieces'
   box radius + 7.5 m from their centre — with the carrier side-on to them.
@@ -156,9 +190,12 @@ earlier in the tree).
 
 ## Tests
 
-`tests/test_equipment.gd`, 69 checks on a box fixture (a 20 × 10 m building with its dig, footings,
+`tests/test_equipment.gd`, 90 checks on a box fixture (a 20 × 10 m building with its dig, footings,
 walls, a cornice, a roof, a cross 90 m away, a granary placed after the roof, street lights and a
-boundary wall 40 m out): node names and triangle budgets; dimensions; the tower crane works as a
+boundary wall 40 m out): node names and triangle budgets; dimensions; the excavator against the
+Cat 320 sheet (track length and width, ground and counterweight clearance, tail swing, cab top,
+upper-frame width, boom, stick, bucket tip radius and width, and its working range within 5 % of
+the published one); the dig cycle inside the joint limits; the tower crane works as a
 `Crane` and picks up from its laydown; the dig cycle reaches into the ground and dumps over the
 truck body; the mobile boom puts its tip 6 m over a target; placement (clear of the building, not
 dragged out by the boundary wall, jib covering every corner, 10 m over the top); the plan (crane

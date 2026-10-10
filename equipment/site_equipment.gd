@@ -49,7 +49,7 @@ const TOWER_GRACE_DAYS := 7.0
 ## Excavator dig cycle and truck round, in seconds of playback.
 const DIG_CYCLE := 11.0
 const TRUCK_ROUND := 6 # dig cycles per truck round: arrive, 4 loads, leave
-const TRUCK_SPOT := Vector3(7.8, 0, 1.0) # truck origin, excavator space
+const TRUCK_SPOT := Vector3(7.4, 0, 1.0) # truck origin, excavator space
 const TRUCK_RUN := 40.0 # metres from the loading spot to where it leaves view
 
 @export var tower_crane: bool = true:
@@ -798,16 +798,19 @@ func _animate_dig() -> void:
 ## Excavator pose at phase `u` (0..1) of a dig cycle: {slew (fraction of the
 ## dump slew), boom, stick, bucket, loaded}. Keyframes eased with smoothstep.
 static func dig_pose(u: float) -> Dictionary:
+	# Solved against the model's own kinematics (EquipmentModels.excavator_teeth())
+	# so the teeth really go 1 m into the ground and the bucket pin passes 4.9 m
+	# up over the truck body, 7.4 m out.
 	const KEYS := [
-		[0.00, 0.0, 0.30, 0.95, -0.5, false], # reach out
-		[0.14, 0.0, -0.20, 0.85, -0.3, false], # teeth into the ground
-		[0.34, 0.0, -0.35, 0.20, 0.6, true], # drag in
-		[0.42, 0.0, -0.30, -0.20, 1.3, true], # curl full
-		[0.52, 0.0, 0.40, 0.10, 1.4, true], # lift clear
-		[0.66, 1.0, 0.50, 0.35, 1.4, true], # slew over the truck
-		[0.74, 1.0, 0.55, 0.40, -1.0, false], # dump
-		[0.84, 1.0, 0.50, 0.40, -0.9, false], # shake out
-		[1.00, 0.0, 0.30, 0.95, -0.5, false], # back
+		[0.00, 0.0, 0.06, 0.455, -0.8, false], # reach out, bucket open
+		[0.14, 0.0, -0.105, 0.475, -0.5, false], # teeth into the ground
+		[0.30, 0.0, -0.025, 0.265, 0.4, true], # drag in
+		[0.42, 0.0, -0.035, -0.03, 1.6, true], # curl full
+		[0.54, 0.0, 0.6, 0.265, 1.6, true], # lift clear
+		[0.66, 1.0, 0.45, 0.85, 1.6, true], # slew over the truck
+		[0.74, 1.0, 0.45, 0.85, -0.9, false], # dump
+		[0.84, 1.0, 0.45, 0.85, -0.8, false], # shake out
+		[1.00, 0.0, 0.06, 0.455, -0.8, false], # back
 	]
 	var i := 0
 	while i < KEYS.size() - 2 and u >= KEYS[i + 1][0]:
@@ -832,7 +835,8 @@ func _show_rest() -> void:
 	if _excavator:
 		_excavator.visible = true
 		_truck.visible = true
-		EquipmentModels.pose_excavator(_excavator, 0.0, 0.3, 0.95, -0.5, false)
+		var rest := dig_pose(0.0)
+		EquipmentModels.pose_excavator(_excavator, 0.0, rest.boom, rest.stick, rest.bucket, false)
 		_truck.position = TRUCK_SPOT
 		EquipmentModels.pose_truck(_truck, 0.0, 0.0)
 

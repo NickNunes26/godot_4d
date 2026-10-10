@@ -113,7 +113,9 @@ laydown area rather than appearing above their place.
   item 1, but worth doing first on its own: until then, Generate 4D Schedule destroys formwork.
 - **Crane geometry isn't collision-checked** — a jib sweeping through a finished element is
   invisible to the clash system. Open since Phase 2; more relevant now that every project has a
-  tower crane (item 2).
+  tower crane (item 2). Equipment clashes generally: the excavator's manufacturer envelope (working
+  ranges, tail swing, transport size) is already on file (`equipment/specs/`, `EquipmentSpecs`);
+  the cranes need the same.
 - **The `install` path is fixed**: up 5 m, across, straight down. Since item 2 it starts at the
   tower crane's laydown area (its `PickupZone`) instead of 15 m to the side, but the path itself
   doesn't come from the crane, and a vertical final approach through whatever is above is reported

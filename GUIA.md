@@ -247,6 +247,8 @@ de animación (**Auto types**, apartado 8): "Excavación" trae la excavadora, "H
   previa).
 - **La grúa autopropulsada** se coloca en cada izado junto a las piezas, así que no tiene marcador.
 - **Si la escena ya tiene una grúa tuya**, no se añade la grúa torre.
+- **La excavadora está a escala**: una Caterpillar 320 construida con las medidas publicadas por
+  el fabricante, que llega tan lejos y tan hondo como la real (`equipment/specs/`).
 - **Sin maquinaria**: selecciona el SequenceManager y desmarca **Auto Equipment** (y borra
   SiteEquipment si lo añadiste).
 - Las máquinas son solo visuales: no se comprueban colisiones con ellas ni aparecen en la

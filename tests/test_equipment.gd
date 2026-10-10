@@ -105,7 +105,9 @@ func _test_models() -> void:
 		_check("mobile crane has %s" % n, mc.has_node(n), true)
 	for n in ["Body", "Body/Load"]:
 		_check("truck has %s" % n, tr.has_node(n), true)
-	for n in ["Upper", "Upper/Boom", "Upper/Boom/Stick", "Upper/Boom/Stick/Bucket", "Upper/BoomRam"]:
+	for n in ["Undercarriage", "Upper", "Upper/Boom", "Upper/Boom/Stick", "Upper/Boom/Stick/Bucket",
+			"Upper/BoomRamL", "Upper/BoomRamR", "Upper/Boom/StickRam", "Upper/Boom/Stick/BucketRam",
+			"Upper/Boom/Stick/PowerLink", "Upper/Boom/Stick/Bucket/Load"]:
 		_check("excavator has %s" % n, ex.has_node(n), true)
 	for m in [tc, mc, tr, ex]:
 		var tris := EquipmentModels.triangle_count(m)
@@ -115,6 +117,7 @@ func _test_models() -> void:
 		[snappedf(box.size.z, 0.5), snappedf(box.size.x, 0.5), snappedf(box.size.y, 0.5)], [9.0, 2.5, 3.0])
 	box = SiteEquipment.rest_box(ex)
 	_check("excavator 3 m wide over the tracks", snappedf(box.size.x, 0.1), 3.0)
+	_test_excavator_against_spec(ex)
 	_check("tower crane: jib reaches 50 m", snappedf(SiteEquipment.rest_box(tc.get_node("Arm")).end.x, 1.0), 51.0)
 	EquipmentModels.pose_truck(tr, 1.0, 0.5)
 	_check("truck body tips to 50 degrees", snappedf(rad_to_deg((tr.get_node("Body") as Node3D).rotation.x), 0.1), 50.0)
@@ -131,6 +134,43 @@ func _test_models() -> void:
 	_check("its pickup is the laydown", (crane as Crane).get_pickup_position(Vector3(100, 0, 0)), Vector3(0, 0, 9))
 	crane.free()
 
+## The excavator against Caterpillar's sheet (equipment/specs/excavator_cat_320.json):
+## the dimensions it is built to, and the working range its joint limits give.
+func _test_excavator_against_spec(ex: Node3D) -> void:
+	print("=== excavator against the Cat 320 sheet")
+	var id := EquipmentSpecs.EXCAVATOR
+	var spec := EquipmentSpecs.load_spec(id)
+	_check("spec loads, with its source", spec.has("source") and String(spec.source.url).begins_with("https://"), true)
+	_check("listed among the specs", EquipmentSpecs.ids().has(id), true)
+	var mm := func(section: String, key: String) -> float: return EquipmentSpecs.metres(id, section, key)
+	var under := SiteEquipment.rest_box(ex.get_node("Undercarriage"))
+	_check("track length overall %.2f m" % under.size.z, absf(under.size.z - mm.call("dimensions", "track_length_overall")) < 0.02, true)
+	_check("track width %.2f m" % under.size.x, absf(under.size.x - mm.call("dimensions", "track_width_600_shoes")) < 0.05, true)
+	var car := SiteEquipment.rest_box(ex.get_node("Undercarriage/CarBody"))
+	_check("ground clearance %.2f m" % car.position.y, absf(car.position.y - mm.call("dimensions", "ground_clearance")) < 0.01, true)
+	var cw := ex.get_node("Upper/Counterweight") as Node3D
+	var cw_box := SiteEquipment.rest_box(cw)
+	var cw_world := (ex.get_node("Upper") as Node3D).transform * cw_box
+	_check("counterweight clearance %.2f m" % cw_world.position.y,
+		absf(cw_world.position.y - mm.call("dimensions", "counterweight_clearance")) < 0.01, true)
+	var tail := Vector2(cw_box.end.x, cw_box.end.z).length()
+	_check("tail swing radius %.2f m" % tail, absf(tail - mm.call("dimensions", "tail_swing_radius")) < 0.02, true)
+	var cab := (ex.get_node("Upper") as Node3D).transform * SiteEquipment.rest_box(ex.get_node("Upper/Cab"))
+	_check("cab top %.2f m" % cab.end.y, absf(cab.end.y - mm.call("dimensions", "cab_top_height")) < 0.05, true)
+	var upper := SiteEquipment.rest_box(ex.get_node("Upper/House"))
+	_check("upperframe width %.2f m" % upper.size.x, absf(upper.size.x - mm.call("dimensions", "upperframe_width_without_walkways")) < 0.01, true)
+	var boom := EquipmentModels.EXC_BOOM_TIP.length()
+	_check("boom %.2f m pin to pin, stick %.1f m" % [boom, EquipmentModels.EXC_STICK],
+		absf(boom - mm.call("front", "boom_length")) < 0.02 and absf(EquipmentModels.EXC_STICK - mm.call("front", "stick_length")) < 0.01, true)
+	var tip := Vector2(EquipmentModels.EXC_TEETH_TIP).length()
+	_check("bucket tip radius %.2f m, width %.1f m" % [tip, EquipmentModels.EXC_BUCKET_WIDTH],
+		absf(tip - mm.call("front", "bucket_tip_radius")) < 0.01 and absf(EquipmentModels.EXC_BUCKET_WIDTH - mm.call("front", "bucket_width")) < 0.01, true)
+	var env := EquipmentModels.excavator_envelope()
+	for pair in [["reach", "max_reach_at_ground_line"], ["depth", "max_digging_depth"], ["cut", "max_cutting_height"]]:
+		var want: float = mm.call("working_ranges", pair[1])
+		var got: float = env[pair[0]]
+		_check("working range %s %.2f m (Cat: %.2f), within 5 %%" % [pair[0], got, want], absf(got - want) / want < 0.05, true)
+
 func _test_dig_cycle() -> void:
 	print("=== excavator: digs below ground, dumps over the truck body")
 	var deepest := INF
@@ -139,10 +179,17 @@ func _test_dig_cycle() -> void:
 		deepest = minf(deepest, EquipmentModels.excavator_teeth(0, p.boom, p.stick, p.bucket).y)
 	_check("teeth go into the ground", deepest < -0.3, true)
 	var d := SiteEquipment.dig_pose(0.74)
-	var bucket := EquipmentModels.excavator_teeth(-PI / 2.0 * d.slew, d.boom, d.stick, d.bucket)
+	var bucket := EquipmentModels.excavator_bucket_pin(-PI / 2.0 * d.slew, d.boom, d.stick)
 	var spot := SiteEquipment.TRUCK_SPOT
-	_check("dump point over the body (x %.1f)" % bucket.x, bucket.x > spot.x - 1.2 and bucket.x < spot.x + 1.2, true)
-	_check("and above it (y %.1f)" % bucket.y, bucket.y > 3.2, true)
+	_check("dump: bucket pin over the body (x %.1f)" % bucket.x, bucket.x > spot.x - 1.0 and bucket.x < spot.x + 1.0, true)
+	_check("and well above it (y %.1f)" % bucket.y, bucket.y > 4.0, true)
+	var ok_limits := true
+	for i in 100:
+		var p := SiteEquipment.dig_pose(i / 100.0)
+		for joint in [[p.boom, EquipmentModels.EXC_BOOM_RANGE], [p.stick, EquipmentModels.EXC_STICK_RANGE],
+				[p.bucket, EquipmentModels.EXC_BUCKET_RANGE]]:
+			ok_limits = ok_limits and joint[0] >= joint[1].x - 1e-6 and joint[0] <= joint[1].y + 1e-6
+	_check("the cycle stays inside the joint limits", ok_limits, true)
 	_check("loaded from the drag to the dump", [SiteEquipment.dig_pose(0.1).loaded, SiteEquipment.dig_pose(0.5).loaded, SiteEquipment.dig_pose(0.8).loaded], [false, true, false])
 	var a := SiteEquipment.dig_pose(0.0)
 	var z := SiteEquipment.dig_pose(0.9999)

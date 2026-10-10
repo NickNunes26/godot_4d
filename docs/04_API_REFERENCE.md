@@ -1308,9 +1308,21 @@ vehicles face −Z, one shared material per colour.
   telescope (`BOOM_MIN` 13.0 m → `BOOM_MAX` 41.8 m foot to tip), `outriggers` 0..1, hook drop in
   metres. `boom_tip(root) -> Vector3` (world, or own space outside a tree).
 - `truck() -> Node3D` and `pose_truck(root, tip, load_level)` — body tip 0..1 (50°), load 0..1.
-- `excavator() -> Node3D` and `pose_excavator(root, slew, boom, stick, bucket, loaded)`;
-  `excavator_teeth(slew, boom, stick, bucket) -> Vector3` (bucket teeth, machine space).
+- `excavator() -> Node3D` and `pose_excavator(root, slew, boom, stick, bucket, loaded)` (bucket
+  + curls in; angles clamped to `EXC_BOOM_RANGE`, `EXC_STICK_RANGE`, `EXC_BUCKET_RANGE`);
+  `excavator_teeth(slew, boom, stick, bucket) -> Vector3` (teeth tips) and
+  `excavator_bucket_pin(slew, boom, stick) -> Vector3`, both in machine space;
+  `excavator_envelope(steps := 40) -> {reach, depth, cut}` (metres, scanned over the joint
+  limits). Dimensions are the `EXC_*` constants, from the Cat 320 sheet.
 - `triangle_count(root) -> int`, `material(color) -> StandardMaterial3D`.
+
+### `EquipmentSpecs` (`RefCounted`, static, `@tool`)
+Published measurements of real machines, one JSON per machine in `equipment/specs/` (millimetres as
+printed, with source URL, configuration and retrieval date). `EXCAVATOR := "excavator_cat_320"`.
+- `load_spec(id) -> Dictionary` (cached; `{}` and an error if unreadable).
+- `metres(id, section, key) -> float` — `section` is `"dimensions"`, `"front"` or
+  `"working_ranges"`; NAN when absent.
+- `ids() -> PackedStringArray` — every spec in the folder.
 
 ### `SiteEquipment` (`Node3D`, `@tool`)
 The site's plant, placed from the model and driven by the schedule.

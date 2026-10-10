@@ -1,0 +1,82 @@
+{
+	"id": "excavator_cat_320",
+	"machine": "Caterpillar 320 hydraulic excavator (~22 t crawler)",
+	"source": {
+		"title": "320 Hydraulic Excavator - Technical Specifications (Caterpillar)",
+		"url": "https://www.petersoncat.com/sites/cat/files/products/documents/1508919198-33586.pdf",
+		"retrieved": "2026-10-10",
+		"pages": "1 (engine, track, swing, weights, hydraulics), 4 (dimensions), 5 (working ranges), bucket specifications table",
+		"cross_checks": [
+			"https://www.clevelandbrothers.com/products/new-products/construction-equipment/excavators/medium-excavators/126532-320 (dealer listing: track length 14.6 ft, the only figure taken from it)",
+			"https://l-lynch.com/uploads/Product%20Specification%20Sheets/Lynch_HeavyExcavator-CAT-320-2D.pdf"
+		],
+		"note": "All dimensions are approximate per Caterpillar and vary with bucket selection. Values are copied as published; nothing here is derived except where a key says so."
+	},
+	"configuration": {
+		"boom": "Reach boom 5.7 m (18'8\")",
+		"stick": "Reach stick R2.9B1 (9'6\")",
+		"bucket": "HD 1.19 m3, 1200 mm, pin-on (no quick coupler)",
+		"shoes": "600 mm triple grouser",
+		"counterweight": "4.2 t",
+		"undercarriage": "long"
+	},
+	"units": "mm unless the key says otherwise",
+	"dimensions": {
+		"cab_top_height": 2960,
+		"fogs_top_height": 3100,
+		"handrail_height": 2950,
+		"shipping_height_with_boom_stick_bucket": 3160,
+		"shipping_height_with_boom_stick": 2910,
+		"shipping_height_with_boom": 2480,
+		"shipping_length_with_boom_stick_bucket": 9530,
+		"shipping_length_with_boom_stick": 9500,
+		"shipping_length_with_boom": 8450,
+		"upperframe_width_without_walkways": 2780,
+		"tail_swing_radius": 2830,
+		"counterweight_clearance": 1050,
+		"ground_clearance": 470,
+		"track_length_to_roller_centres": 3650,
+		"track_length_overall": 4450,
+		"track_length_overall_note": "dealer listing (14.6 ft); Caterpillar's sheet gives only the roller-centre length",
+		"track_gauge": 2380,
+		"track_width_600_shoes": 2980,
+		"undercarriage_width_600_shoes": 2980,
+		"shoe_width": 600,
+		"shoes_per_side": 49,
+		"track_rollers_per_side": 8,
+		"carrier_rollers_per_side": 2
+	},
+	"front": {
+		"boom_length": 5700,
+		"stick_length": 2900,
+		"bucket_tip_radius": 1570,
+		"bucket_width": 1200,
+		"bucket_capacity_m3": 1.19,
+		"bucket_weight_kg": 916
+	},
+	"working_ranges": {
+		"max_digging_depth": 6720,
+		"max_reach_at_ground_line": 9860,
+		"max_cutting_height": 9370,
+		"max_loading_height": 6490,
+		"min_loading_height": 2170,
+		"max_depth_cut_2440_level_bottom": 6550,
+		"max_vertical_wall_digging_depth": 5190
+	},
+	"performance": {
+		"swing_speed_rpm": 11.3,
+		"max_travel_speed_kmh": 5.7,
+		"bucket_digging_force_iso_kn": 150,
+		"stick_digging_force_iso_kn": 106,
+		"operating_weight_kg": 21900,
+		"counterweight_kg": 4200
+	},
+	"hydraulic_cylinders": {
+		"boom_bore": 120,
+		"boom_stroke": 1260,
+		"stick_bore": 140,
+		"stick_stroke": 1504,
+		"bucket_bore": 120,
+		"bucket_stroke": 1104
+	}
+}
