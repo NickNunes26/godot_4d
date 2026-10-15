@@ -86,6 +86,7 @@ Every other field is optional:
 | `stagger`, `stagger_accel`, `stagger_min`, `dur`, `dur_accel`, `dur_min` | Cadence tuning — see "Per-action cadence" |
 | `formwork` | Formwork block or `true`/`false` — see "Formwork" |
 | `crane_id` | `install` only: which crane, by node name, instead of the nearest |
+| `rotate` | Built in one pose, then swung into place about a hinge: `{"group", "duration_days", "lag_days", "angle_deg"}` — see `11_TYPES_REALISM_CLASHES.md`, "`rotate`" |
 | `comment` | Free text; the generator writes the activity's label and dates here |
 
 And at the **root**, siblings of `"steps"` because they describe the project rather than one task:

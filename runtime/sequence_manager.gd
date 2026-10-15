@@ -466,9 +466,14 @@ func initialize_parts():
 			child.position = child.get_meta("original_pos")
 		if child.has_meta("original_scale"):
 			child.scale = child.get_meta("original_scale")
+		# A "rotate" swing turns the node: undo it too, or the next capture
+		# would record the built pose as the modelled one.
+		if child.has_meta("original_quaternion"):
+			child.quaternion = child.get_meta("original_quaternion")
 
 		child.set_meta("original_pos", child.position)
 		child.set_meta("original_scale", child.scale)
+		child.set_meta("original_quaternion", child.quaternion)
 		child.set_meta("original_transform", child.global_transform)  # stored before scale is zeroed
 		if child is MeshInstance3D and child.mesh:
 			child.set_meta("original_aabb", child.mesh.get_aabb())

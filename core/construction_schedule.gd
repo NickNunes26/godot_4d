@@ -31,6 +31,13 @@ class_name ConstructionSchedule
 extends RefCounted
 
 var _part_schedules: Dictionary = {} # part_name -> { start_day, end_day, anim_type }
+# "rotate" blocks, gathered per group while the actions are scheduled: group ->
+# {parts, build_end_day, lag_days, duration_days, angle_deg}. Turned into
+# _hinges once every member's finish is known -- see _resolve_hinges().
+var _rotate_groups: Dictionary = {}
+# part_name -> {start_day, end_day, pivot, axis, angle}: the swing a part makes
+# with the rest of its group, world space, angle in radians at the start.
+var _hinges: Dictionary = {}
 var _min_day: float = INF
 var _max_day: float = -INF
 # Only the most recent day is kept: scrub_to() and get_collisions() ask for the
@@ -305,6 +312,9 @@ func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_groupe
 		# resolve depends_on against it.
 		if action_id != "":
 			_action_finish_days[action_id] = action_start_day + duration_days
+		_collect_rotate_group(action, action_id, target_parts, action_start_day + duration_days)
+
+	_resolve_hinges(building_parts)
 
 	if _min_day == INF:
 		_min_day = 0.0
@@ -881,6 +891,88 @@ func _update_bounds(s: float, e: float):
 	if s < _min_day: _min_day = s
 	if e > _max_day: _max_day = e
 
+## Adds an action's parts to its "rotate" group (11_TYPES_REALISM_CLASHES.md,
+## "rotate"). The block rides on an ordinary action -- the parts are built by
+## its own type, in the pose they are built in -- and every action naming the
+## same group is one rigid body: an arch half built standing up and lowered
+## onto its springing is nine dovela actions and one swing. Timing keys may be
+## given on any member; where members disagree, the last one scheduled wins.
+func _collect_rotate_group(action: Dictionary, action_id: String, target_parts: Array, finish_day: float) -> void:
+	var cfg = action.get("rotate")
+	if cfg == null:
+		return
+	if not cfg is Dictionary:
+		push_warning("ConstructionSchedule: action '%s' has a \"rotate\" that is not an object -- ignored" % action_id)
+		return
+	var group: String = str(cfg.get("group", action_id))
+	var g: Dictionary = _rotate_groups.get(group, {
+		"parts": [], "build_end_day": -INF, "lag_days": 0.0, "duration_days": 1.0, "angle_deg": NAN,
+	})
+	g.parts.append_array(target_parts)
+	g.build_end_day = maxf(g.build_end_day, finish_day)
+	for key in ["lag_days", "duration_days", "angle_deg"]:
+		if cfg.has(key):
+			var v = cfg[key]
+			if v is float or v is int:
+				g[key] = float(v)
+			else:
+				push_warning("ConstructionSchedule: rotate group '%s': %s must be a number -- ignored" % [group, key])
+	_rotate_groups[group] = g
+
+## Turns each rotate group into one swing for all of its parts: it starts when
+## the last member has finished building (plus lag_days) and lasts
+## duration_days. Before it the group stands in its built pose, after it in
+## its modelled one.
+func _resolve_hinges(building_parts: Dictionary) -> void:
+	for group in _rotate_groups:
+		var g: Dictionary = _rotate_groups[group]
+		var nodes: Array = []
+		for p in g.parts:
+			if building_parts.has(p):
+				nodes.append(building_parts[p])
+		var geo := hinge_geometry(nodes)
+		if geo.is_empty():
+			push_warning("ConstructionSchedule: rotate group '%s' has no measurable parts -- no rotation" % group)
+			continue
+		var start_day: float = g.build_end_day + g.lag_days
+		var end_day: float = start_day + maxf(g.duration_days, 0.0)
+		var angle: float = geo.angle if is_nan(g.angle_deg) else deg_to_rad(g.angle_deg)
+		for p in g.parts:
+			if building_parts.has(p):
+				_hinges[p] = {"start_day": start_day, "end_day": end_day,
+					"pivot": geo.pivot, "axis": geo.axis, "angle": angle}
+		_update_bounds(start_day, end_day)
+
+## The hinge a group of parts swings about, from their modelled (final)
+## geometry, world space: the pivot is the middle of the base of the lowest
+## part (an arch half's springing dovela sits on its hinge), the axis is
+## horizontal, and the angle is the one that stands the group upright -- the
+## line from the pivot to the group's centre turned vertical. Rotating by
+## `angle` about `axis` through `pivot` gives the built pose; 0 the modelled
+## one. {} when no part has the metas SequenceManager records, or the group
+## is upright already.
+static func hinge_geometry(parts: Array) -> Dictionary:
+	var union := AABB()
+	var have := false
+	var pivot := Vector3.ZERO
+	var lowest := INF
+	for part in parts:
+		if not (part is Node3D and part.has_meta("original_aabb") and part.has_meta("original_transform")):
+			continue
+		var box: AABB = (part.get_meta("original_transform") as Transform3D) * (part.get_meta("original_aabb") as AABB)
+		union = box if not have else union.merge(box)
+		have = true
+		if box.position.y < lowest:
+			lowest = box.position.y
+			pivot = Vector3(box.get_center().x, box.position.y, box.get_center().z)
+	if not have:
+		return {}
+	var to_centre: Vector3 = union.get_center() - pivot
+	var axis := to_centre.cross(Vector3.UP)
+	if axis.length() < 0.0001:
+		return {}
+	return {"pivot": pivot, "axis": axis.normalized(), "angle": to_centre.angle_to(Vector3.UP)}
+
 # Shared by _cache_ground_start() (per-part install fallback position) and
 # the install-unit recording above (crane swing target) -- pure geometry,
 # resolved once per commander before crane assignment even happens (nearest-
@@ -1019,8 +1111,10 @@ func get_part_window(part_name: String) -> Dictionary:
 ## The core query: given a day number, returns every scheduled part's state
 ## as {anim_type, progress} where progress in [0, 1] (0 = not started yet,
 ## 1 = complete). Feed this straight into AnimationApplier.apply_instant()
-## per part. Clamps and caches internally; never errors on an out-of-range
-## current_day.
+## per part. A part in a "rotate" group also carries "hinge" ({pivot, axis,
+## angle}, the angle still to go): hand it to
+## AnimationApplier.apply_instant_hinged() instead. Clamps and caches
+## internally; never errors on an out-of-range current_day.
 func get_part_states(current_day: float) -> Dictionary:
 	var cache_key = int(round(current_day * 100.0))
 	if cache_key == _state_cache_key:
@@ -1043,10 +1137,29 @@ func get_part_states(current_day: float) -> Dictionary:
 			"anim_type": sched.anim_type,
 			"progress": progress
 		}
+		if _hinges.has(part_name):
+			states[part_name]["hinge"] = _hinge_state(_hinges[part_name], current_day)
 
 	_state_cache_key = cache_key
 	_state_cache = states
 	return states
+
+## Where a hinged part is in its swing on current_day: the whole angle before
+## the swing starts (standing as built), none once it has ended, eased in and
+## out between -- slow off the jacks, slow as it settles.
+static func _hinge_state(hinge: Dictionary, current_day: float) -> Dictionary:
+	var done := 0.0
+	if current_day >= hinge.end_day:
+		done = 1.0
+	elif current_day > hinge.start_day:
+		done = (current_day - hinge.start_day) / (hinge.end_day - hinge.start_day)
+		done = Tween.interpolate_value(0.0, 1.0, done, 1.0, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
+	return {"pivot": hinge.pivot, "axis": hinge.axis, "angle": hinge.angle * (1.0 - done)}
+
+## The swing window of a part in a "rotate" group, {start_day, end_day, pivot,
+## axis, angle}, or {} for a part that doesn't rotate.
+func get_hinge(part_name: String) -> Dictionary:
+	return _hinges.get(part_name, {})
 
 ## The [start_day, end_day] spans during which at least one install part is in
 ## transit, merged and sorted. A collision can only exist inside one of them

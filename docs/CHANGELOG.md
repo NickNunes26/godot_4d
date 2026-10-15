@@ -3,6 +3,24 @@
 Notable changes per release. The design reasoning behind each subsystem lives in the numbered
 docs in this folder; `README.md` is the as-built reference.
 
+## 0.7.1
+
+**`rotate`: built in one pose, swung into place.** A block on any action, for elements built in
+one position and turned into their modelled one -- an arch half built standing up beside its
+pier and lowered onto its springing (*abatimiento*), as on the VTO Río Zadorra viaduct. Every
+action naming the same `group` is one rigid body: its parts are built, by their own type, standing
+upright about a horizontal hinge at the base of the group's lowest part, and swing down together
+once the last one is finished (+ `lag_days`), over `duration_days`, eased in and out. `angle_deg`
+sets the start angle instead of upright. See `11_TYPES_REALISM_CLASHES.md`, "`rotate`".
+
+- `ConstructionSchedule`: `hinge_geometry()`, `get_hinge()`; `get_part_states()` adds `"hinge"`
+  for the parts of a group. Malformed blocks warn and are ignored.
+- `AnimationApplier.apply_instant_hinged()` and `reset_rotation()`; `TimelineController.scrub_to()`
+  uses them, and turns back a part whose `rotate` was removed.
+- `SequenceManager.initialize_parts()` records and restores `original_quaternion`, and Stop
+  Preview restores rotation as well as position and scale: no part is saved mid-swing.
+- `tests/test_rotate.gd`, 24 checks. The other nine suites pass unchanged.
+
 ## 0.7.0
 
 Animation types read from activity names, animations that look like construction, clash

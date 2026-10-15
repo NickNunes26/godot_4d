@@ -1424,6 +1424,19 @@ The site's plant, placed from the model and driven by the schedule.
                                       #   meaningful for an "install" action with 2+ cranes.
                                       #   An unresolvable id warns and falls back
   
+  # Hinged rotation (0.7.1) -- see 11_TYPES_REALISM_CLASHES.md, "rotate"
+  "rotate": {                        # Parts built in another pose, then swung into place
+    "group": "ARCH_P13",             # Every action naming the same group is one rigid
+                                      #   body (default: this action's id)
+    "duration_days": 2,              # Length of the swing (default 1)
+    "lag_days": 0,                   # Days between the last member built and the swing
+    "angle_deg": 56                  # Optional: start this far from the modelled pose
+                                      #   instead of standing the group upright
+  },                                  # ConstructionSchedule.hinge_geometry(parts),
+                                      #   get_hinge(part_name); get_part_states() adds
+                                      #   "hinge" for these parts, applied with
+                                      #   AnimationApplier.apply_instant_hinged()
+  
   # Cadence control (optional) -- all values are RELATIVE: the whole cadence is
   #   normalized onto duration_days, so these set the spacing *within* an action,
   #   never its total length. See README.md, "Per-action cadence"

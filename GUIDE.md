@@ -107,6 +107,12 @@ metres above, one piece after another), `sink_down` (sinks and disappears, e.g. 
 `rise_up` (the whole element rises from 10 m below), `install` (lifted by a crane, and
 clash-checked).
 
+Elements built in one position and then turned into their final one (an arch half built
+standing up and lowered onto its springing) take a `"rotate"` block in `construction_steps.json`:
+`"rotate": {"group": "ARCH_P13", "duration_days": 2}` on each of their actions. They are built
+standing upright about a hinge at the base of the lowest piece, and swing down together once the
+last one is finished.
+
 What the name inference picks, roughly: demolition and site clearing fade out; excavation and
 topsoil sink down; concrete, slabs, footings and columns fill up; masonry, walls, chimneys and
 scaffolding build up; stone pieces, precast, steel and timber framing, ironwork and lighting drop

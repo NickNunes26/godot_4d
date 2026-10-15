@@ -193,6 +193,7 @@ godot --headless --path . --script res://addons/construction_4d_tool/tests/test_
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_task_classifier.gd
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_collisions.gd
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_animations.gd
+godot --headless --path . --script res://addons/construction_4d_tool/tests/test_rotate.gd
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_equipment.gd
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_geo.gd
 godot --headless --path . --script res://addons/construction_4d_tool/tests/test_terrain.gd

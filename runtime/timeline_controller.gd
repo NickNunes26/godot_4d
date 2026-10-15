@@ -35,6 +35,8 @@ var _movie_end_hold_remaining: float = 0.0
 
 var _schedule: ConstructionSchedule = null
 var _building_parts: Dictionary = {}
+# Parts scrub_to() last drove through a "rotate" swing (part_name -> true).
+var _hinged: Dictionary = {}
 # crane name -> Crane, from SequenceManager._find_all_cranes() (or {} for the
 # Phase 3 dock's editor preview, which deliberately previews with no crane --
 # see docs/README.md, "The editor dock"). Which crane services which
@@ -80,7 +82,15 @@ func scrub_to(target_day: float, retract_crane: bool = true) -> void:
 		if not part:
 			continue
 		var state = states[part_name]
-		AnimationApplier.apply_instant(part, state.anim_type, state.progress)
+		if state.has("hinge"):
+			AnimationApplier.apply_instant_hinged(part, state.anim_type, state.progress, state.hinge)
+			_hinged[part_name] = true
+		else:
+			# A part that swung under an earlier version of the schedule (its
+			# "rotate" since removed) would otherwise keep the last angle.
+			if _hinged.erase(part_name):
+				AnimationApplier.reset_rotation(part)
+			AnimationApplier.apply_instant(part, state.anim_type, state.progress)
 
 	# Any GeoSun in the scene follows the calendar date (it ignores repeats of
 	# the same day, so calling this every Play frame costs nothing).

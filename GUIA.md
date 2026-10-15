@@ -113,6 +113,12 @@ más arriba, pieza a pieza), `sink_down` (se hunde y desaparece, p. ej. tierra e
 `rise_up` (todo el elemento sube desde 10 m por debajo), `install` (lo coloca una grúa, y se
 comprueba si choca).
 
+Los elementos que se construyen en una posición y después se giran a la definitiva (un semiarco
+construido en vertical y abatido sobre su arranque) llevan un bloque `"rotate"` en
+`construction_steps.json`: `"rotate": {"group": "ARCO_P13", "duration_days": 2}` en cada una de sus
+acciones. Se construyen en vertical, girados sobre una rótula en la base de la pieza más baja, y
+bajan juntos cuando la última está terminada.
+
 Qué elige, a grandes rasgos, la deducción por el nombre: la demolición y el desbroce
 desaparecen; la excavación y la tierra vegetal se hunden; el hormigón, forjados, zapatas y pilares
 se hormigonan; la mampostería, muros, chimeneas y andamios se levantan; las piezas de cantería,

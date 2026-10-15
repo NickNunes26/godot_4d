@@ -417,6 +417,42 @@ static func apply_instant(part: Node3D, anim_type: String, progress: float) -> v
 		"install":   _install_instant(part, progress)
 		FORMWORK_TYPE: _formwork_instant(part, progress)
 
+## apply_instant() for a part in a "rotate" group: its own animation, then the
+## group's swing on top -- a rotation by hinge.angle about hinge.axis through
+## hinge.pivot, all world space (ConstructionSchedule.get_part_states() gives
+## the hinge). The part's own rotation is put back first: every animation sets
+## position and scale and keeps whatever rotation the node has, so without the
+## reset each frame's swing would pile onto the last one's.
+static func apply_instant_hinged(part: Node3D, anim_type: String, progress: float, hinge: Dictionary) -> void:
+	reset_rotation(part)
+	apply_instant(part, anim_type, progress)
+	var angle: float = hinge.get("angle", 0.0)
+	if is_zero_approx(angle):
+		return
+	var pivot: Vector3 = hinge.pivot
+	var turn := Basis(hinge.axis, angle)
+	var swing := Transform3D(turn, pivot - turn * pivot)
+	var parent := part.get_parent() as Node3D
+	var to_world := parent.global_transform if parent else Transform3D.IDENTITY
+	part.transform = to_world.affine_inverse() * swing * to_world * part.transform
+
+## Puts a part's own rotation back, keeping its position and scale -- the
+## rotation SequenceManager.initialize_parts() recorded ("original_quaternion"),
+## else the one in "original_transform".
+static func reset_rotation(part: Node3D) -> void:
+	var q: Quaternion
+	if part.has_meta("original_quaternion"):
+		q = part.get_meta("original_quaternion")
+	elif part.has_meta("original_transform"):
+		var world: Transform3D = part.get_meta("original_transform")
+		var parent := part.get_parent() as Node3D
+		if parent:
+			world = parent.global_transform.affine_inverse() * world
+		q = world.basis.get_rotation_quaternion()
+	else:
+		return
+	part.transform = Transform3D(Basis(q) * Basis.from_scale(part.scale), part.position)
+
 ## Formwork's assemble -> hold -> strip lifecycle, mapped onto the single 0-1
 ## progress window every other animation uses.
 ##

@@ -379,6 +379,10 @@ func stop_preview() -> void:
 			part.position = part.get_meta("original_pos")
 		if part.has_meta("original_scale"):
 			part.scale = part.get_meta("original_scale")
+		# Parts in a "rotate" group are left turned mid-swing otherwise, and
+		# would be saved into the scene that way.
+		if part.has_meta("original_quaternion"):
+			part.quaternion = part.get_meta("original_quaternion")
 		part.visible = true
 	_restore_materials(_material_snapshot)
 	_material_snapshot.clear()

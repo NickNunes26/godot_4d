@@ -203,6 +203,42 @@ first touch (`_c4d_original_alpha`, `_c4d_original_transparency`); materials are
 (`make_materials_unique()`), and `Resource.duplicate()` carries the metas into the next Start
 Preview. `fade_in` is hidden until it starts, like every other type.
 
+### `rotate`
+
+Not a type: a block on an action, whatever its type, for elements built in one pose and then
+turned into their modelled one -- an arch half built standing up beside its pier and lowered onto
+its springing (*abatimiento*), a tower assembled lying on the deck and lifted upright.
+
+```json
+{"id": "ARC_D01_P13", "target_prefix": "4011", "type": "fill_up", "duration_days": 7,
+ "rotate": {"group": "ARCH_P13", "duration_days": 2}}
+```
+
+- **One rigid body per group.** Every action naming the same `group` (default: its own id)
+  swings together, so a half arch can be nine dovela actions, each built in turn, and one swing.
+- **The hinge comes from the model** (`ConstructionSchedule.hinge_geometry()`): the pivot is the
+  middle of the base of the group's lowest part, the axis is horizontal, and the start angle stands
+  the group upright -- the line from the pivot to the group's centre turned vertical. `angle_deg`
+  sets the start angle instead (same axis, same side).
+- **Timing**: the parts are built, by their own type, in the start pose; the swing starts when
+  the last member has finished (+ `lag_days`), lasts `duration_days` (default 1) and eases in and
+  out. Actions that wait for the swing depend on the last member with a lag of the swing's length.
+- **Applying it** (`AnimationApplier.apply_instant_hinged()`): the part's own rotation is put back
+  (`reset_rotation()`, from the `original_quaternion` `SequenceManager.initialize_parts()` now
+  records), its type is applied as usual, then the swing -- a rotation about the pivot in world
+  space -- goes on top. Without the reset every animation, which keeps the node's rotation while it
+  sets position and scale, would pile each frame's swing onto the last one's. A part that loses
+  its `rotate` is turned back the next time it is scrubbed, and Stop Preview restores rotation as
+  well as position and scale, so no part is saved into the scene mid-swing.
+- **Limits**: the hinge works on the parts' recorded transforms, so a group should not be moved
+  between Start Preview and the swing; clash detection sees the swing like any other non-install
+  movement, i.e. not at all.
+
+`tests/test_rotate.gd` (24 checks): pivot, axis and angle; the swing's window; the group standing
+upright and rigid before it, with the pivot fixed; eased; landing exactly on the modelled
+transforms; no pile-up when scrubbing back and forth; a removed `rotate` turning the parts back;
+`reset_rotation()` keeping position and scale; a malformed block ignored.
+
 ### Tests
 
 `tests/test_animations.gd` (27 checks) pins all of the above: drop heights, monotonic descent with
