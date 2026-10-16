@@ -57,6 +57,13 @@ var _min_epoch: float = 0.0
 # action with a literal start_date).
 var _action_start_days: Dictionary = {}
 var _action_finish_days: Dictionary = {}
+# crane name -> ids of the actions naming it in "crane_id" (any type), for
+# crane_window().
+var _crane_actions: Dictionary = {}
+# action id -> where its pieces are (world, mean of their centres) and the
+# stand it names, for the actions naming a crane (crane_pose()).
+var _crane_action_centre: Dictionary = {}
+var _crane_action_stand: Dictionary = {}
 # One entry per commander unit whose action type is "install", used by
 # TimelineController to trigger one crane swing per unit during forward Play.
 # crane_id is "" when `cranes` was empty at _init() time (e.g. the Phase 3
@@ -150,6 +157,11 @@ func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_groupe
 		var duration_days: float = 1.0 # resolved inside each branch below, once target_parts is known
 		if action_id != "":
 			_action_start_days[action_id] = action_start_day
+			var named_crane := str(action.get("crane_id", ""))
+			if named_crane != "":
+				if not _crane_actions.has(named_crane):
+					_crane_actions[named_crane] = []
+				_crane_actions[named_crane].append(action_id)
 
 		var anim_type = action.get("type", "scale_up")
 
@@ -208,6 +220,9 @@ func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_groupe
 				var world_pos: Vector3 = _resolve_commander_world_pos(building_parts[cmd_name])
 				var assignment: Dictionary = _assign_crane(world_pos, cranes, explicit_crane_id)
 				var assigned_crane: Crane = assignment.crane
+				# A crane with stands lifts this unit from the one the action
+				# names (crane_stand) or the nearest; its laydown goes with it.
+				var stand: Node3D = nearest_stand(assigned_crane, world_pos, str(action.get("crane_stand", ""))) if assigned_crane else null
 
 				for p in group_parts:
 					_part_schedules[p] = {
@@ -216,7 +231,7 @@ func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_groupe
 						"anim_type": anim_type
 					}
 					_update_bounds(part_start_day, part_end_day)
-					_cache_ground_start(p, world_pos, assigned_crane, building_parts)
+					_cache_ground_start(p, world_pos, assigned_crane, building_parts, stand)
 					_part_to_commander[p] = cmd_name
 
 					if not _sibling_groups.has(p):
@@ -228,7 +243,7 @@ func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_groupe
 
 				# One swing per commander unit (not per child part).
 				if anim_type == "install":
-					var pickup_pos: Vector3 = _crane_pickup_position(world_pos, assigned_crane)
+					var pickup_pos: Vector3 = _crane_pickup_position(world_pos, assigned_crane, stand)
 					_install_units.append({
 						"start_day": part_start_day,
 						"pickup_pos": pickup_pos,
@@ -236,7 +251,9 @@ func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_groupe
 						"tracked_part_name": cmd_name,
 						"lift_dur": timing.duration_sec * 0.3,
 						"slide_dur": timing.duration_sec * 0.4,
-						"crane_id": assignment.crane_id
+						"crane_id": assignment.crane_id,
+						"stand": String(stand.name) if stand else "",
+						"action_id": action_id
 					})
 				elif anim_type == "fill_up":
 					_fill_up_units.append({
@@ -312,6 +329,15 @@ func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_groupe
 		# resolve depends_on against it.
 		if action_id != "":
 			_action_finish_days[action_id] = action_start_day + duration_days
+			if str(action.get("crane_id", "")) != "":
+				var centre := Vector3.ZERO
+				var counted := 0
+				for p in target_parts:
+					if building_parts.has(p) and building_parts[p].has_meta("original_transform"):
+						centre += _resolve_commander_world_pos(building_parts[p])
+						counted += 1
+				_crane_action_centre[action_id] = centre / counted if counted > 0 else Vector3.ZERO
+				_crane_action_stand[action_id] = str(action.get("crane_stand", ""))
 		_collect_rotate_group(action, action_id, target_parts, action_start_day + duration_days)
 
 	_resolve_hinges(building_parts)
@@ -944,17 +970,27 @@ func _resolve_hinges(building_parts: Dictionary) -> void:
 		_update_bounds(start_day, end_day)
 
 ## The hinge a group of parts swings about, from their modelled (final)
-## geometry, world space: the pivot is the middle of the base of the lowest
-## part (an arch half's springing dovela sits on its hinge), the axis is
-## horizontal, and the angle is the one that stands the group upright -- the
-## line from the pivot to the group's centre turned vertical. Rotating by
-## `angle` about `axis` through `pivot` gives the built pose; 0 the modelled
-## one. {} when no part has the metas SequenceManager records, or the group
-## is upright already.
+## geometry, world space: the pivot is on the back edge of the lowest part's
+## base, the axis is horizontal, and the angle is the one that stands the group
+## up as far as it goes without any of it passing behind the hinge -- its back
+## face turned vertical. Rotating by `angle` about `axis` through `pivot` gives
+## the built pose; 0 the modelled one. {} when no part has the metas
+## SequenceManager records, or the group does not lean.
+##
+## "Back" is away from the way the group leans: standing it up turns it over
+## that edge, as a leaning plank stood up pivots on its foot's back corner. For
+## an arch half it is the extrados corner of its springing joint, on the side
+## of its pier -- where the hinge of an *abatimiento* sits, so that the half
+## built standing up is all in front of it, clear of the pier. 0.7.1 pivoted
+## about the middle of the base and turned the line to the group's centre
+## vertical, which swung part of the depth back past the springing, into
+## whatever stands behind it (the pier). The middle of the back edge, across
+## the group, is the pivot.
 static func hinge_geometry(parts: Array) -> Dictionary:
 	var union := AABB()
 	var have := false
-	var pivot := Vector3.ZERO
+	var low_part: Node3D = null
+	var low_box := AABB()
 	var lowest := INF
 	for part in parts:
 		if not (part is Node3D and part.has_meta("original_aabb") and part.has_meta("original_transform")):
@@ -964,14 +1000,64 @@ static func hinge_geometry(parts: Array) -> Dictionary:
 		have = true
 		if box.position.y < lowest:
 			lowest = box.position.y
-			pivot = Vector3(box.get_center().x, box.position.y, box.get_center().z)
+			low_part = part
+			low_box = box
 	if not have:
 		return {}
-	var to_centre: Vector3 = union.get_center() - pivot
-	var axis := to_centre.cross(Vector3.UP)
-	if axis.length() < 0.0001:
+	var base_centre := Vector3(low_box.get_center().x, low_box.position.y, low_box.get_center().z)
+	var lean := Vector3(union.get_center().x - base_centre.x, 0.0, union.get_center().z - base_centre.z)
+	if lean.length() < 0.001:
 		return {}
-	return {"pivot": pivot, "axis": axis.normalized(), "angle": to_centre.angle_to(Vector3.UP)}
+	lean = lean.normalized()
+	# Back edge: of the lowest part's points, those furthest back along the
+	# lean (within 5 cm: the edge, not one corner of it), averaged.
+	var low_points := _world_points(low_part)
+	var back := INF
+	for w in low_points:
+		back = minf(back, w.dot(lean))
+	var sum := Vector3.ZERO
+	var n := 0
+	for w in low_points:
+		if w.dot(lean) <= back + 0.05:
+			sum += w
+			n += 1
+	var pivot := sum / n
+	# Each point, seen in the plane of the swing, sits atan2(forward, up) from
+	# straight up over the pivot; standing the group up by `angle` takes that
+	# much off every one, so the largest angle that leaves none behind the
+	# hinge is the smallest of them. Points within 0.5 m of the axis (the
+	# hinge edge itself) say nothing about the lean and are skipped.
+	var angle := INF
+	for part in parts:
+		if not (part is Node3D and part.has_meta("original_aabb") and part.has_meta("original_transform")):
+			continue
+		for w in _world_points(part):
+			var v: Vector3 = w - pivot
+			var fwd := v.dot(lean)
+			if Vector2(fwd, v.y).length() > 0.5:
+				angle = minf(angle, atan2(fwd, v.y))
+	if is_inf(angle) or angle <= 0.0001:
+		return {}
+	return {"pivot": pivot, "axis": lean.cross(Vector3.UP).normalized(), "angle": angle}
+
+## A part's points in the space of its original_transform: the mesh's vertices,
+## or the corners of original_aabb for a part that is not a single mesh.
+static func _world_points(part: Node3D) -> PackedVector3Array:
+	var xf: Transform3D = part.get_meta("original_transform")
+	var local := PackedVector3Array()
+	var mi := part as MeshInstance3D
+	if mi and mi.mesh:
+		for s in mi.mesh.get_surface_count():
+			local.append_array(mi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX])
+	else:
+		var box: AABB = part.get_meta("original_aabb")
+		for i in 8:
+			local.append(box.get_endpoint(i))
+	var out := PackedVector3Array()
+	out.resize(local.size())
+	for i in local.size():
+		out[i] = xf * local[i]
+	return out
 
 # Shared by _cache_ground_start() (per-part install fallback position) and
 # the install-unit recording above (crane swing target) -- pure geometry,
@@ -991,9 +1077,9 @@ func _resolve_commander_world_pos(cmd: Node3D) -> Vector3:
 ## e.g. the Phase 3 dock's editor preview) or that a crane_id/nearest-distance
 ## search genuinely couldn't resolve still gets a sane, deterministic pickup
 ## point instead of erroring.
-func _crane_pickup_position(world_pos: Vector3, crane: Crane) -> Vector3:
+func _crane_pickup_position(world_pos: Vector3, crane: Crane, stand: Node3D = null) -> Vector3:
 	if crane:
-		return crane.get_pickup_position(world_pos)
+		return crane.get_pickup_position(world_pos, stand)
 	return world_pos + Vector3(15.0, 0, 0)
 
 ## Assigns one crane to a commander given its resolved world position, an
@@ -1042,12 +1128,12 @@ func _assign_crane(world_pos: Vector3, cranes: Dictionary, explicit_crane_id: St
 ## First call per part per schedule wins (a part only ever has one install
 ## window); the meta is overwritten on every rebuild rather than trusted, since
 ## older scenes can carry a world-space value saved by the previous behaviour.
-func _cache_ground_start(part_name: String, world_pos: Vector3, crane: Crane, building_parts: Dictionary) -> void:
+func _cache_ground_start(part_name: String, world_pos: Vector3, crane: Crane, building_parts: Dictionary, stand: Node3D = null) -> void:
 	var part = building_parts.get(part_name)
 	if not part or _ground_start_cached.has(part_name): return
 	_ground_start_cached[part_name] = true
 
-	var displacement: Vector3 = _crane_pickup_position(world_pos, crane) - world_pos
+	var displacement: Vector3 = _crane_pickup_position(world_pos, crane, stand) - world_pos
 	var parent := part.get_parent() as Node3D
 	if parent:
 		displacement = parent.global_transform.basis.inverse() * displacement
@@ -1160,6 +1246,158 @@ static func _hinge_state(hinge: Dictionary, current_day: float) -> Dictionary:
 ## axis, angle}, or {} for a part that doesn't rotate.
 func get_hinge(part_name: String) -> Dictionary:
 	return _hinges.get(part_name, {})
+
+## When a crane stands on site: {start_day, end_day}, or {} for the whole
+## schedule. Read from the Crane's on_site_from / on_site_until / setup_days
+## (with get(), so it also works on the editor's placeholder of a crane, whose
+## script does not run there): each is an action id -- its start, or its
+## finish for "until" -- or a YYYY-MM-DD date; an empty one comes from the
+## crane's work, setup_days before the first / after the last action naming it
+## in "crane_id" or install lift assigned to it. A crane with no window given
+## and no work keeps standing throughout, as cranes always did.
+func crane_window(crane: Node) -> Dictionary:
+	var crane_name := String(crane.name)
+	var from_s := str(crane.get("on_site_from")) if crane.get("on_site_from") != null else ""
+	var until_s := str(crane.get("on_site_until")) if crane.get("on_site_until") != null else ""
+	var setup: float = float(crane.get("setup_days")) if crane.get("setup_days") != null else 1.0
+	var first := INF
+	var last := -INF
+	for id in _crane_actions.get(crane_name, []):
+		if _action_start_days.has(id):
+			first = minf(first, _action_start_days[id])
+		if _action_finish_days.has(id):
+			last = maxf(last, _action_finish_days[id])
+	for unit in _install_units:
+		if unit.crane_id == crane_name:
+			first = minf(first, unit.start_day)
+			var w: Dictionary = _part_schedules.get(unit.tracked_part_name, {})
+			last = maxf(last, w.get("end_day", unit.start_day))
+	var start := _window_day(from_s, true)
+	var end := _window_day(until_s, false)
+	if is_nan(start) and is_nan(end) and is_inf(first):
+		return {}
+	if is_nan(start):
+		start = first - setup if not is_inf(first) else -INF
+	if is_nan(end):
+		end = last + setup if not is_inf(last) else INF
+	return {"start_day": start, "end_day": end}
+
+## An on_site_from/until value as a day: an action id's start (or finish), or
+## a date. NAN when empty; an unknown value warns once and counts as empty.
+func _window_day(value: String, is_start: bool) -> float:
+	value = value.strip_edges()
+	if value == "":
+		return NAN
+	if _action_start_days.has(value):
+		return _action_start_days[value] if is_start else _action_finish_days.get(value, _action_start_days[value])
+	if RegEx.create_from_string("^\\d{4}-\\d{2}-\\d{2}$").search(value):
+		var epoch := parse_date_to_epoch(value)
+		if not is_nan(epoch):
+			return (epoch - _min_epoch) / 86400.0
+	if not _warned_windows.has(value):
+		_warned_windows[value] = true
+		push_warning("ConstructionSchedule: crane window '%s' is neither an action id nor a YYYY-MM-DD date -- ignored" % value)
+	return NAN
+
+var _warned_windows: Dictionary = {}
+
+## A crane's stand markers (its `stands` paths), resolved. Static and read with
+## get(), so it works on the editor's placeholder of a crane too.
+static func crane_stands(crane: Node) -> Array:
+	var out: Array = []
+	if not crane:
+		return out
+	var paths = crane.get("stands")
+	if paths == null:
+		return out
+	for path in paths:
+		var n := crane.get_node_or_null(path)
+		if n is Node3D:
+			out.append(n)
+	return out
+
+## The stand named `stand_name` if the crane has it, else the one nearest
+## `target` in plan; null for a crane without stands.
+static func nearest_stand(crane: Node, target: Vector3, stand_name: String = "") -> Node3D:
+	var list := crane_stands(crane)
+	if list.is_empty():
+		return null
+	if stand_name != "":
+		for s in list:
+			if String(s.name) == stand_name:
+				return s
+		push_warning("ConstructionSchedule: crane '%s' has no stand '%s' -- using the nearest" % [crane.name, stand_name])
+	var best: Node3D = null
+	var best_d := INF
+	for s in list:
+		var d := Vector2(s.global_position.x - target.x, s.global_position.z - target.z).length()
+		if d < best_d:
+			best_d = d
+			best = s
+	return best
+
+## A crane's transform at a stand: the marker's position and its turn about Y.
+static func stand_pose(stand: Node3D) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP, stand.global_rotation.y), stand.global_position)
+
+## Where a crane with stands is on `day`: at the stand of the lift under way,
+## driving from one stand to the next in the gap between lifts from different
+## stands, at its first stand before the first lift and its last after the
+## last. null for a crane without stands, or with nothing to do (it stays where
+## it is).
+func crane_pose(crane: Node, day: float) -> Variant:
+	var list := crane_stands(crane)
+	if list.is_empty():
+		return null
+	var crane_name := String(crane.name)
+	var plan: Array = []
+	var named := {}
+	for id in _crane_actions.get(crane_name, []):
+		if not _action_start_days.has(id):
+			continue
+		named[id] = true
+		plan.append({"start": _action_start_days[id], "end": _action_finish_days.get(id, _action_start_days[id]),
+			"stand": nearest_stand(crane, _crane_action_centre.get(id, Vector3.ZERO), _crane_action_stand.get(id, ""))})
+	# Lifts given to it as the nearest crane, not named in crane_id.
+	for unit in _install_units:
+		if unit.crane_id == crane_name and not named.has(unit.get("action_id", "")):
+			var st: Node3D = nearest_stand(crane, unit.target_pos, unit.get("stand", ""))
+			var w: Dictionary = _part_schedules.get(unit.tracked_part_name, {})
+			plan.append({"start": unit.start_day, "end": w.get("end_day", unit.start_day), "stand": st})
+	if plan.is_empty():
+		return null
+	plan.sort_custom(func(a, b): return a.start < b.start)
+	if day <= plan[0].start:
+		return stand_pose(plan[0].stand)
+	for i in plan.size():
+		var e: Dictionary = plan[i]
+		if day <= e.end:
+			return stand_pose(e.stand)
+		if i + 1 < plan.size() and day < plan[i + 1].start:
+			var nxt: Dictionary = plan[i + 1]
+			if nxt.stand == e.stand:
+				return stand_pose(e.stand)
+			var a := stand_pose(e.stand)
+			var b := stand_pose(nxt.stand)
+			var k: float = (day - e.end) / (nxt.start - e.end)
+			return Transform3D(Basis(Quaternion(a.basis).slerp(Quaternion(b.basis), k)), a.origin.lerp(b.origin, k))
+	return stand_pose(plan[-1].stand)
+
+## Whether one of the lifts given to `crane` is under way on `day`.
+func crane_lifting(crane: Node, day: float) -> bool:
+	var crane_name := String(crane.name)
+	for unit in _install_units:
+		if unit.crane_id != crane_name:
+			continue
+		var w: Dictionary = _part_schedules.get(unit.tracked_part_name, {})
+		if day >= unit.start_day and day <= w.get("end_day", unit.start_day):
+			return true
+	return false
+
+## Whether `crane` is on site on `day` (see crane_window()).
+func crane_on_site(crane: Node, day: float) -> bool:
+	var w := crane_window(crane)
+	return w.is_empty() or (day >= w.start_day and day <= w.end_day)
 
 ## The [start_day, end_day] spans during which at least one install part is in
 ## transit, merged and sorted. A collision can only exist inside one of them

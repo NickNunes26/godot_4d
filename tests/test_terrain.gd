@@ -380,6 +380,22 @@ func _test_grading() -> void:
 	timed.activities = PackedStringArray(["NoSuchAction"])
 	_near("unknown activity: levelled from day 0", timed.progress_on(sched, 0.0), 1.0, 1e-6)
 
+	# A footing's pit: dug over E0 (days 0-2), filled back over B1 (days 6-10).
+	var bsched := ConstructionSchedule.new({"steps": [{"actions": [
+		{"id": "E0", "target_prefix": "Nothing", "type": "fade_in", "start_date": "2027-03-01", "duration_days": 2},
+		{"id": "F0", "target_prefix": "Nothing", "type": "fade_in", "duration_days": 4, "depends_on": "E0"},
+		{"id": "B1", "target_prefix": "Nothing", "type": "fade_in", "duration_days": 4, "depends_on": "F0"}]}]},
+		{}, SpatialGrouper.new(), {})
+	var footing_pit := _platform(_square(5.0), 590.0, 1.0)
+	footing_pit.activities = PackedStringArray(["E0"])
+	footing_pit.backfill_activities = PackedStringArray(["B1"])
+	_near("pit: natural before the dig", footing_pit.progress_on(bsched, -1.0), 0.0, 1e-6)
+	_near("half dug", footing_pit.progress_on(bsched, 1.0), 0.5, 1e-6)
+	_near("open while the footing goes in", footing_pit.progress_on(bsched, 4.0), 1.0, 1e-6)
+	_near("half filled back", footing_pit.progress_on(bsched, 8.0), 0.5, 1e-6)
+	_near("filled: natural ground again", footing_pit.progress_on(bsched, 12.0), 0.0, 1e-6)
+	_near("the finished site (no schedule): filled", footing_pit.progress_on(null, 0.0), 0.0, 1e-6)
+
 ## A small "building": a ground slab, a wall on it, a dig and a footing under it.
 func _test_platforms_from_model() -> void:
 	print("=== Platforms from a model")
@@ -441,6 +457,33 @@ func _test_graded_node() -> void:
 	_check("shader gets the grading", mat.get_shader_parameter("has_grading") == true and mat.get_shader_parameter("grading") is ImageTexture)
 	terrain.follow_schedule(null, 0.0)
 	_near("no schedule: finished ground", (mat.get_shader_parameter("grade_progress") as PackedFloat32Array)[0], 1.0, 1e-6)
+
+	# The excavator's stand at a pit: past the banks, on natural ground, facing in.
+	var centre_w := container.global_transform * Vector3(0, 580.0, 0)
+	_near("natural ground under the pit is the terrain's own", terrain.natural_world_height_at(centre_w), terrain.world_height_at(centre_w) + 20.0, 0.5)
+	list[0].activities = PackedStringArray(["DIG"])
+	list[0].backfill_activities = PackedStringArray(["FILL"])
+	terrain.platforms = list
+	terrain.rebuild()
+	var dsched := ConstructionSchedule.new({"steps": [{"actions": [
+		{"id": "DIG", "target_prefix": "Nothing", "type": "sink_down", "start_date": "2027-03-01", "duration_days": 3},
+		{"id": "FILL", "target_prefix": "Nothing", "type": "fill_up", "depends_on": "DIG", "lag_days": 5, "duration_days": 2}]}]},
+		{}, SpatialGrouper.new(), {})
+	var eq := SiteEquipment.new()
+	sm.add_child(eq)
+	_check("the equipment finds the pit", SiteEquipment._terrain_pits(get_root().get_tree()).size() == 1)
+	var jobs: Array = eq._pit_jobs(dsched, {})
+	_check("a dig job and a fill job", jobs.map(func(j): return [j.id, j.fill]) == [["DIG", false], ["FILL", true]], str(jobs.map(func(j): return [j.id, j.fill])))
+	var site: Transform3D = jobs[0].site
+	var off_bank := absf(terrain.world_height_at(site.origin) - terrain.natural_world_height_at(site.origin)) < 0.2
+	_check("its excavator stands off the banks, on natural ground", off_bank and absf(site.origin.y - terrain.natural_world_height_at(site.origin)) < 1e-3, str(site.origin))
+	var outside: bool = Vector2(site.origin.x, site.origin.z).length() > 20.0
+	_check("outside the pit (%.1f m from its middle)" % Vector2(site.origin.x, site.origin.z).length(), outside)
+	var facing: Vector3 = -site.basis.z
+	var to_mid := (centre_w - site.origin)
+	_check("facing the pit", Vector2(facing.x, facing.z).normalized().dot(Vector2(to_mid.x, to_mid.z).normalized()) > 0.99)
+	_check("the fill job works from the same stand", (jobs[1].site as Transform3D).origin.is_equal_approx(site.origin))
+	eq.free()
 	var none: Array[TerrainPlatform] = []
 	terrain.platforms = none
 	terrain.rebuild()

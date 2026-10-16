@@ -85,7 +85,8 @@ Every other field is optional:
 | `batch` | `true`: all parts move together (one pour in several meshes). `false` (default): one after another |
 | `stagger`, `stagger_accel`, `stagger_min`, `dur`, `dur_accel`, `dur_min` | Cadence tuning — see "Per-action cadence" |
 | `formwork` | Formwork block or `true`/`false` — see "Formwork" |
-| `crane_id` | `install` only: which crane, by node name, instead of the nearest |
+| `crane_id` | `install`: which crane, by node name, instead of the nearest. On any action it also sets that crane's on-site window (see "Cranes") |
+| `crane_stand` | With `crane_id`, on a crane with stands: the stand (marker name) the lift is made from, instead of the nearest |
 | `rotate` | Built in one pose, then swung into place about a hinge: `{"group", "duration_days", "lag_days", "angle_deg"}` — see `11_TYPES_REALISM_CLASHES.md`, "`rotate`" |
 | `comment` | Free text; the generator writes the activity's label and dates here |
 
@@ -178,7 +179,9 @@ the undo; dependents of a removed action are listed in a warning).
 the dock's dropdown is built from. What each looks like, which work it suits and how the
 activity name chooses it are in `11_TYPES_REALISM_CLASHES.md`. In short:
 
-- `fill_up` (a pour) and `build_up` (masonry, scaffolding) grow from the element's own base;
+- `fill_up` (a pour) and `build_up` (masonry, scaffolding) fill the element up to a level that
+  rises in world +Y from its lowest point to its highest, whatever its orientation (a flat top
+  closes the cut: `core/fill_clip.gdshader`, on meshes `MeshPrep` turns outward);
   `scale_up` grows uniformly from the middle of its base without overshoot; `drop_in` lowers a
   piece from 1.5 m + 1.5 × its height (2.5–8 m) with a fade-in; `rise_up`/`sink_down` move the
   whole element 10 m; the fades respect each material's own transparency; `install` lifts the
@@ -257,8 +260,36 @@ which is a `Crane` like any other.
   it serves is staged there, invisible until its turn), else 15 m to the side of the piece.
   `_cache_ground_start()` stores it on the part as a *local* position.
 - **Motion**: `swing()` when a unit starts during forward Play (the arm slews to the pickup, then
-  the trolley and hook track the piece), `retract()` on every manual scrub. The site equipment's
-  tower crane also follows the `drop_in` pieces it can reach.
+  the trolley and hook track the piece), `retract()` on every manual scrub (its tween is the
+  crane's, so a lift starting straight after stops it instead of being pulled back to rest). The
+  site equipment's tower crane also follows the `drop_in` pieces it can reach.
+- **Luffing boom** (0.7.2): a crane with a `Boom` under `Arm` -- a crawler or lattice-boom crane,
+  `Track` being its head -- reaches each lift's radius by pitching the boom about its heel
+  (15-85°), so the rope stays at the boom tip, instead of running a trolley out along a jib.
+  The heel and length are measured from the boom's mesh at `_ready()`.
+- **On site** (0.7.2): a scene crane is shown only inside its window (`ConstructionSchedule.
+  crane_window()`): `on_site_from` / `on_site_until` (an action id -- its start / its finish --
+  or a `YYYY-MM-DD` date), or else `setup_days` (default 1) before the first and after the last
+  action naming it in `crane_id` or lift assigned to it. A crane with neither stands throughout,
+  as before. `TimelineController.scrub_to()` applies it; the editor preview does too (the dock
+  hands it the scene's cranes with `set_site_cranes()` and Stop Preview restores them).
+- **Stands** (0.7.2): a crane's `stands` (NodePaths to markers -- a `Marker3D` shows in the
+  editor, and can be moved and turned there) are where it works from. Each lift is made from the
+  stand its action names in `crane_stand`, or else the nearest to the piece
+  (`ConstructionSchedule.nearest_stand()`); its laydown goes with it (`get_pickup_position(target,
+  stand)`). `crane_pose()` puts the crane at the stand of the lift under way, drives it across in
+  the gap between lifts from different stands (straight, at constant speed; it is not
+  clash-checked), and leaves it at its first stand before and its last after. The arm is kept
+  relative to the crane's root (`_arm_rest_local`), so it slews from wherever the crane stands;
+  `place_at()` moves it. In the editor preview the placeholder is moved and Stop Preview puts it
+  back.
+- **Off the piece once it lands**: when none of its lifts is under way
+  (`ConstructionSchedule.crane_lifting()`), the timeline retracts a crane still following a
+  piece, instead of the hook staying on it (and the boom flattening as a crane with stands drives
+  off to the next one).
+- **Pickup before `_ready()`**: the schedule asks for `PickupZone` while `SequenceManager` gets
+  ready, before a crane later in the tree has run its own `_ready()`; the zone is looked up
+  there and then.
 - **Not clash-checked**: the cranes' own geometry is not part of the collision query.
 
 ## Collision detection

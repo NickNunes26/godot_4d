@@ -243,6 +243,17 @@ func world_height_at(p: Vector3) -> float:
 		return NAN
 	return (global_transform * Vector3(l.x, h, l.z)).y
 
+## The natural ground under a world point, as a world Y -- the terrain before
+## any platform is cut or filled; NAN off the grid or with no data.
+func natural_world_height_at(p: Vector3) -> float:
+	if not data or not is_inside_tree():
+		return NAN
+	var l := global_transform.affine_inverse() * p
+	var h := data.height_at(l.x + data.center_e, data.center_n - l.z)
+	if is_nan(h):
+		return NAN
+	return (global_transform * Vector3(l.x, h, l.z)).y
+
 ## world_height_at() from the first terrain in the tree that covers `p`; NAN
 ## when none does.
 static func ground_y(tree: SceneTree, p: Vector3) -> float:

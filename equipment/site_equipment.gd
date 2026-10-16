@@ -80,6 +80,14 @@ var _tower_jib := 0.0
 var _mobile: Node3D = null
 var _excavator: Node3D = null
 var _truck: Node3D = null
+# The excavator and its truck together, moved as one to each dig: under the
+# ExcavatorSite marker for the model's own pit, under this node for the
+# terrain's pits (placed per job, see _pit_jobs()).
+var _rig: Node3D = null
+var _pit_sites: Dictionary = {} # TerrainPlatform -> Transform3D
+# More crews for digs at the terrain's pits that overlap the first one's:
+# [{rig, excavator, truck, dig}], made as needed, under this node.
+var _crews: Array = []
 
 var _plan: Dictionary = {}
 var _plan_schedule: ConstructionSchedule = null
@@ -186,14 +194,14 @@ func _build(sequence_manager: Node3D, runtime: bool) -> void:
 			tower_height = size.height
 			jib_length = size.jib
 		_build_tower(marker, size, ctx, tree, runtime)
-	if excavator_and_truck and not ctx.dig_box.size.is_zero_approx():
-		var marker := get_node_or_null(EXCAVATOR_SITE) as Node3D
-		if not marker:
-			marker = _add_marker(EXCAVATOR_SITE, _propose_excavator_site(ctx, tree))
-		_excavator = _generated(EquipmentModels.excavator(), marker)
-		_truck = _generated(EquipmentModels.truck(), marker)
-		_truck.position = TRUCK_SPOT
-		_truck.rotation.y = PI
+	var model_pit: bool = not ctx.dig_box.size.is_zero_approx()
+	if excavator_and_truck and (model_pit or not _terrain_pits(tree).is_empty()):
+		var holder: Node3D = self
+		if model_pit:
+			holder = get_node_or_null(EXCAVATOR_SITE) as Node3D
+			if not holder:
+				holder = _add_marker(EXCAVATOR_SITE, _propose_excavator_site(ctx, tree))
+		_make_rig(holder)
 	if mobile_crane:
 		_mobile = _generated(EquipmentModels.mobile_crane(), self)
 		_mobile.visible = false
@@ -214,11 +222,8 @@ func _rebuild_preview() -> void:
 		_tower_jib = j
 	_ground_level = tower_marker.global_position.y if tower_marker else 0.0
 	var exc_marker := get_node_or_null(EXCAVATOR_SITE) as Node3D
-	if excavator_and_truck and exc_marker:
-		_excavator = _generated(EquipmentModels.excavator(), exc_marker)
-		_truck = _generated(EquipmentModels.truck(), exc_marker)
-		_truck.position = TRUCK_SPOT
-		_truck.rotation.y = PI
+	if excavator_and_truck and (exc_marker or not _terrain_pits(get_tree()).is_empty()):
+		_make_rig(exc_marker if exc_marker else self)
 	if mobile_crane:
 		_mobile = _generated(EquipmentModels.mobile_crane(), self)
 	_show_rest()
@@ -245,8 +250,34 @@ func _clear_models() -> void:
 	_mobile = null
 	_excavator = null
 	_truck = null
+	_rig = null
+	_pit_sites.clear()
+	_crews.clear()
 	_tower_part = null
 
+
+## The excavator with its truck parked on its right, under `holder`.
+func _make_rig(holder: Node3D) -> void:
+	_rig = _generated(Node3D.new(), holder)
+	_rig.name = "DigRig"
+	_excavator = EquipmentModels.excavator()
+	_rig.add_child(_excavator)
+	_truck = EquipmentModels.truck()
+	_rig.add_child(_truck)
+	_truck.position = TRUCK_SPOT
+	_truck.rotation.y = PI
+
+## The terrains' platforms that are dug or filled by an activity -- a
+## footing's pit: [{terrain, platform}].
+static func _terrain_pits(tree: SceneTree) -> Array:
+	var out: Array = []
+	if not tree:
+		return out
+	for t in tree.get_nodes_in_group(ConstructionTerrain.GROUP):
+		for p in (t as ConstructionTerrain).platforms:
+			if p and p.enabled and (not p.activities.is_empty() or not p.backfill_activities.is_empty()):
+				out.append({"terrain": t, "platform": p})
+	return out
 
 func _generated(model: Node3D, parent: Node3D) -> Node3D:
 	model.set_meta(_GENERATED, true)
@@ -538,9 +569,19 @@ func make_plan(schedule: ConstructionSchedule, building_parts: Dictionary) -> Di
 		if a.category in ROOF:
 			roof_off = maxf(roof_off, span.finish_day)
 		if a.category in DIG or a.category in FILL:
-			digs.append({"start": span.start_day, "finish": span.finish_day, "fill": a.category in FILL})
+			digs.append({"id": a.id, "start": span.start_day, "finish": span.finish_day, "fill": a.category in FILL})
 		if not (a.category in LIGHT_LIFTS):
 			lift_actions.append(a)
+	# The terrain's pits: each activity that digs one (its `activities`) or
+	# fills it back (`backfill_activities`) is a job at that pit, whatever its
+	# name says. An action already listed above by its category is replaced.
+	var pit_jobs := _pit_jobs(schedule, building_parts)
+	if not pit_jobs.is_empty():
+		var covered := {}
+		for j in pit_jobs:
+			covered[j.id] = true
+		digs = digs.filter(func(d): return not covered.has(d.get("id", "")))
+		digs.append_array(pit_jobs)
 	digs.sort_custom(func(x, y): return x.start < y.start)
 	var tower_off := roof_off if roof_off > -INF else struct_off
 
@@ -595,6 +636,77 @@ func make_plan(schedule: ConstructionSchedule, building_parts: Dictionary) -> Di
 			tower = {"on": on - erect_days, "off": off + erect_days, "parts": tower_parts}
 	return {"tower": tower, "mobile": mobile_jobs, "digs": digs}
 
+
+## Dig and fill jobs at the terrain's pits: {id, start, finish, fill, site}.
+func _pit_jobs(schedule: ConstructionSchedule, building_parts: Dictionary) -> Array:
+	var jobs: Array = []
+	for pit in _terrain_pits(get_tree()):
+		var p: TerrainPlatform = pit.platform
+		for pair in [[p.activities, false], [p.backfill_activities, true]]:
+			for id in pair[0]:
+				var span := schedule.get_action_day_range(id)
+				if span.is_empty():
+					continue
+				if not _pit_sites.has(p):
+					_pit_sites[p] = _pit_site(pit.terrain, p, building_parts, schedule, span.start_day)
+				jobs.append({"id": id, "start": span.start_day, "finish": span.finish_day,
+					"fill": pair[1], "site": _pit_sites[p]})
+	return jobs
+
+## Where the excavator stands to dig (or fill) a pit: on natural ground just
+## past the top of its banks -- walking out from the middle of the pit until
+## the ground under its tracks is no longer cut or filled -- facing the pit.
+## Of eight ways out, the nearest that isn't against anything of the model
+## already built on `day` (the first dig); the excavator's own reach is not
+## modelled, so a deep pit's machine stands well back from the bottom, as it
+## would on a ramp's head.
+func _pit_site(terrain: ConstructionTerrain, p: TerrainPlatform, building_parts: Dictionary, schedule: ConstructionSchedule, day: float) -> Transform3D:
+	var anchor := terrain.get_node_or_null(terrain.anchor_path) as Node3D
+	var to_world := anchor.global_transform if anchor else Transform3D()
+	var c2 := Vector2.ZERO
+	for q in p.footprint:
+		c2 += q
+	c2 /= maxf(p.footprint.size(), 1)
+	var centre := to_world * Vector3(c2.x, p.level, c2.y)
+	var boxes: Array = []
+	for n in building_parts:
+		var w := schedule.get_part_window(n)
+		if not w.is_empty() and w.end_day > day:
+			continue
+		var b := rest_box(building_parts[n])
+		if b.size != Vector3.ZERO:
+			boxes.append(b)
+	var half_track := EquipmentModels.EXC_TRACK_CENTRES / 2.0 + EquipmentModels.EXC_TRACK_WHEEL_R
+	var best := Transform3D()
+	var best_d := INF
+	for k in 8:
+		var dir := Vector3(cos(TAU * k / 8.0), 0, sin(TAU * k / 8.0))
+		for step in range(1, 120):
+			var at := centre + dir * float(step)
+			var clear := true
+			for off in [-half_track, 0.0, half_track]:
+				var q: Vector3 = at + Vector3(-dir.z, 0, dir.x) * off
+				var graded := terrain.world_height_at(q)
+				var natural := terrain.natural_world_height_at(q)
+				if is_nan(graded) or is_nan(natural) or absf(graded - natural) > 0.2:
+					clear = false
+					break
+			if not clear:
+				continue
+			at += dir * 2.0
+			if _blocked(boxes, Vector2(at.x, at.z), 3.0, terrain.natural_world_height_at(at)):
+				break
+			var d := float(step)
+			if d < best_d:
+				best_d = d
+				at.y = terrain.natural_world_height_at(at)
+				# The excavator digs along its -Z: turned to face the pit's middle.
+				var to_pit := centre - at
+				best = Transform3D(Basis(Vector3.UP, atan2(to_pit.x, to_pit.z) + PI), at)
+			break
+	if best_d == INF:
+		best = Transform3D(Basis(), centre + Vector3(0, 0, 10))
+	return best
 
 ## Where the mobile crane sets up for a lift: outside the pieces, on the side
 ## away from the building, its carrier side-on to them.
@@ -765,13 +877,33 @@ func _step_mobile(k: float) -> void:
 func _apply_dig(day: float) -> void:
 	if not _excavator:
 		return
-	_dig = {}
-	for d in _plan.get("digs", []):
-		if day >= d.start and day <= d.finish:
-			_dig = d
-			break
+	var active: Array = _plan.get("digs", []).filter(func(d): return day >= d.start and day <= d.finish)
+	_dig = active[0] if not active.is_empty() else {}
 	_excavator.visible = not _dig.is_empty()
 	_truck.visible = _excavator.visible
+	if _dig.has("site"):
+		_rig.global_transform = _dig.site
+	elif _rig:
+		_rig.transform = Transform3D()
+	# Digs at the terrain's pits that overlap: a crew each -- an excavator
+	# and its truck -- as a site with several footings on the go would have.
+	var extra: Array = active.slice(1).filter(func(d): return d.has("site"))
+	while _crews.size() < extra.size():
+		var rig: Node3D = _generated(Node3D.new(), self)
+		rig.name = "DigRig%d" % (_crews.size() + 2)
+		var ex := EquipmentModels.excavator()
+		rig.add_child(ex)
+		var tr := EquipmentModels.truck()
+		rig.add_child(tr)
+		tr.position = TRUCK_SPOT
+		tr.rotation.y = PI
+		_crews.append({"rig": rig, "excavator": ex, "truck": tr, "dig": {}})
+	for i in _crews.size():
+		var crew: Dictionary = _crews[i]
+		crew.dig = extra[i] if i < extra.size() else {}
+		crew.rig.visible = not crew.dig.is_empty()
+		if not crew.dig.is_empty():
+			crew.rig.global_transform = crew.dig.site
 	_animate_dig()
 
 
@@ -793,23 +925,32 @@ func _process(delta: float) -> void:
 ## TRUCK_ROUND cycles -- reverse in, four loads, drive off, out of sight.
 ## For a fill, the truck arrives loaded and tips at the spot instead.
 func _animate_dig() -> void:
-	if _dig.is_empty() or not _excavator:
+	if not _excavator:
 		return
-	var fill: bool = _dig.fill
-	var round_t := fmod(_anim_time, DIG_CYCLE * TRUCK_ROUND)
+	if not _dig.is_empty():
+		_animate_crew(_excavator, _truck, _dig.fill, _anim_time)
+	for i in _crews.size():
+		var crew: Dictionary = _crews[i]
+		if not crew.dig.is_empty():
+			# Out of step with the others, so the crews don't move as one.
+			_animate_crew(crew.excavator, crew.truck, crew.dig.fill, _anim_time + DIG_CYCLE * (1.37 * (i + 1)))
+
+## One crew's dig cycle and truck round at time `time` (see _animate_dig()).
+func _animate_crew(excavator: Node3D, truck: Node3D, fill: bool, time: float) -> void:
+	var round_t := fmod(time, DIG_CYCLE * TRUCK_ROUND)
 	var cycle := int(round_t / DIG_CYCLE)
 	var u := fmod(round_t, DIG_CYCLE) / DIG_CYCLE
 	var truck_here := cycle >= 1 and cycle <= 4
 	var pose := dig_pose(u)
 	var dump_slew := -PI / 2.0 if truck_here and not fill else PI / 3.0
-	EquipmentModels.pose_excavator(_excavator, pose.slew * dump_slew, pose.boom, pose.stick, pose.bucket, pose.loaded)
+	EquipmentModels.pose_excavator(excavator, pose.slew * dump_slew, pose.boom, pose.stick, pose.bucket, pose.loaded)
 
 	var spot := TRUCK_SPOT
 	var far := TRUCK_SPOT + Vector3(0, 0, TRUCK_RUN)
 	var load_level := 0.0
 	var tip := 0.0
 	var pos := spot
-	_truck.visible = true
+	truck.visible = true
 	if cycle == 0:
 		var k := smoothstep(0.0, 0.8, u)
 		pos = far.lerp(spot, k)
@@ -826,11 +967,11 @@ func _animate_dig() -> void:
 		var k := smoothstep(0.0, 0.75, u)
 		pos = spot.lerp(far, k)
 		load_level = 0.0 if fill else 1.0
-		_truck.visible = u < 0.75
-	_truck.position = pos
-	var ground := ground_at(get_tree(), _truck.global_position, _truck.get_parent().global_position.y)
-	_truck.global_position.y = ground
-	EquipmentModels.pose_truck(_truck, tip, load_level)
+		truck.visible = u < 0.75
+	truck.position = pos
+	var ground := ground_at(get_tree(), truck.global_position, truck.get_parent().global_position.y)
+	truck.global_position.y = ground
+	EquipmentModels.pose_truck(truck, tip, load_level)
 
 
 ## Excavator pose at phase `u` (0..1) of a dig cycle: {slew (fraction of the
@@ -870,9 +1011,16 @@ func _show_rest() -> void:
 		_set_erected(1.0)
 	if _mobile:
 		_mobile.visible = false
+	for crew in _crews:
+		crew.rig.visible = false
+		crew.dig = {}
 	if _excavator:
-		_excavator.visible = true
-		_truck.visible = true
+		# On its marker it shows where it will dig; working the terrain's pits
+		# it has no place of its own until a job puts it at one.
+		var placed := _rig.get_parent() != self
+		_rig.transform = Transform3D()
+		_excavator.visible = placed
+		_truck.visible = placed
 		var rest := dig_pose(0.0)
 		EquipmentModels.pose_excavator(_excavator, 0.0, rest.boom, rest.stick, rest.bucket, false)
 		_truck.position = TRUCK_SPOT

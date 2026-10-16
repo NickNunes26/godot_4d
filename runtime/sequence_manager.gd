@@ -52,6 +52,9 @@ var _timeline_controller: TimelineController = null
 ## from the dock is always used, whatever this says. No tower crane is added to
 ## a scene that already has a Crane.
 @export var auto_equipment: bool = true
+## On Play, a translucent panel in the bottom-left corner showing what the keys
+## and the mouse do (ControlsHint); H hides it. Never in a recording.
+@export var show_controls_hint: bool = true
 ## Where the parts container's origin is on the map (UTM), kept through IFC
 ## import and used by the terrain and GeoSun. Filled in by Load IFC when the
 ## model is georeferenced; editable here (or from the dock's Terreno section)
@@ -133,6 +136,11 @@ func _ready():
 	var collision_visualizer = CollisionVisualizer.new()
 	add_child(collision_visualizer)
 	collision_visualizer.set_timeline_controller(_timeline_controller)
+
+	if show_controls_hint:
+		var hint := ControlsHint.new()
+		hint.name = "ControlsHint"
+		add_child(hint)
 
 ## Configures and starts a recording run.
 ##

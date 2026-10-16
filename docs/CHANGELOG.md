@@ -3,6 +3,76 @@
 Notable changes per release. The design reasoning behind each subsystem lives in the numbered
 docs in this folder; `README.md` is the as-built reference.
 
+## 0.7.2
+
+**Controls on screen.** Play shows a translucent panel in the bottom-left corner with what the keys
+and the mouse do -- keycaps for W A S D, Q E, Shift, Esc and H that light up while held, a mouse
+with its left button marked, and one line saying what to do next (click to fly / Esc to use the
+bar). H hides it; it dims while flying; never in a recording. `runtime/controls_hint.gd`
+(`ControlsHint`), `SequenceManager.show_controls_hint`.
+
+**Pits that are filled back in.** `TerrainPlatform.backfill_activities`: the ground goes back from
+levelled to natural over those actions -- a footing excavation dug before the pour and filled once
+the column clears the ground. Up to 32 platforms (was 16). `tests/test_terrain.gd`: the pit's
+dig / open / fill / finished states.
+
+**Excavators at the pits.** SiteEquipment's excavator and truck now dig and fill the terrain's pits
+(platforms with `activities` / `backfill_activities`), whatever the activities are called and
+with no model element needed: standing on natural ground at the top of each pit's banks, facing
+it, the truck carting the spoil away or tipping the fill. Pits worked at the same time get a crew
+each. `ConstructionTerrain.natural_world_height_at()`; `tests/test_terrain.gd`: the stand.
+
+**`rotate`: hinged on the back edge, stood up clear of what is behind it.** The pivot is now the
+middle of the back edge of the group's lowest part (the extrados corner of an arch half's
+springing joint, on the pier side) instead of the middle of its base, and the automatic start
+angle stands the group up until its back face is vertical instead of turning the line to its
+centre vertical. Both changes keep the group, stood up, in front of its springing: on VTO Río
+Zadorra the 0.7.1 hinge stood the half-arches up through their piers. `angle_deg` still overrides
+the angle. See `11_TYPES_REALISM_CLASHES.md`, "`rotate`".
+
+- `ConstructionSchedule.hinge_geometry()`: reads the parts' mesh vertices (AABB corners for a part
+  that is not a single mesh).
+- `tests/test_rotate.gd`: 25 checks (the pivot and angle checks rewritten for the new rule).
+
+**The pour fills up, straight up.** `fill_up` and `build_up` no longer stretch the element along
+its own Y from a sliver -- which, on a tilted or standing-up arch dovela, looked like a squashed
+piece pulled out sideways. The element stays whole and is drawn below a level that rises in world
++Y from its lowest point to its highest as it stands (after a `rotate` swing too), closed by a flat
+top. See `11_TYPES_REALISM_CLASHES.md`, "The pour as a level".
+
+- `core/fill_clip.gdshader`, swapped in while a part is part-filled (reproducing its
+  StandardMaterial3D), its own materials back when done.
+- `core/mesh_prep.gd` (`MeshPrep.outward()`): consistent outward winding and normals (flat, or
+  smoothed within an angle), which the cap needs; applied to a mesh the first time it is poured.
+- Hollow sections (hollow piers, box-section ribs and decks) pour as their walls: the top is the
+  part's horizontal section at the level, outline minus voids (`MeshPrep.section_cap()`, a
+  `_PourCap` child, never saved; `AnimationApplier.end_fill()` on Stop Preview).
+- `MeshPrep.outward(mesh, smooth_deg, close_openings)`: with `close_openings`, faces an export left
+  out are put back -- a hollow section's missing end as its ring.
+- `AnimationApplier.fill_extent()`; the pour stream aims at the world-vertical level.
+- `tests/test_fill.gd`, 29 checks.
+
+**Cranes: on site only while they work, and a boom that luffs.** A scene crane now appears and
+goes with the schedule: `on_site_from` / `on_site_until` (action id or date) on the `Crane`, or by
+default `setup_days` around the actions naming it in `crane_id` and the lifts assigned to it; one
+with neither stands throughout, as before. Play and the editor preview both follow it. A crane
+with a `Boom` under `Arm` (a crawler crane) pitches it to reach each lift instead of sliding its
+head along a jib, which used to leave the hook hanging away from the boom. See `README.md`,
+"Cranes".
+
+- Fixed: a lift starting within two seconds of a scrub was dragged back towards rest by the
+  scrub's `retract()` tween, which nothing stopped.
+- Fixed: a crane later in the scene tree than the `SequenceManager` had its `PickupZone` ignored
+  (asked for before its `_ready()`), so its lifts started 15 m to the side of the piece instead.
+- **Stands**: a crane's `stands` (markers, e.g. `Marker3D`) are where it works from; each lift is
+  made from the one its action names in `crane_stand` or the nearest, with the laydown travelling
+  along, and the crane drives between stands in the gaps. Markers can be moved in the editor to
+  put the crane where it can really stand.
+- A crane no longer keeps following a piece once its lift is over: the timeline retracts it.
+- `ConstructionSchedule.crane_window()` / `crane_on_site()`; `TimelineController.set_site_cranes()`
+  / `restore_site_cranes()`.
+- `tests/test_crane_site.gd`, 36 checks.
+
 ## 0.7.1
 
 **`rotate`: built in one pose, swung into place.** A block on any action, for elements built in

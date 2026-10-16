@@ -23,6 +23,7 @@ extends Control
 
 const SequenceManagerScript = preload("res://addons/construction_4d_tool/runtime/sequence_manager.gd")
 const TimelineUIScene = preload("res://addons/construction_4d_tool/runtime/timeline_ui.tscn")
+const CraneScript = preload("res://addons/construction_4d_tool/runtime/crane.gd")
 
 @onready var _target_label: Label = $VBox/TargetLabel
 @onready var _load_ifc_button: Button = $VBox/Buttons/LoadIfcButton
@@ -352,9 +353,12 @@ func start_preview() -> void:
 
 	_controller = TimelineController.new()
 	add_child(_controller)
-	# No crane(s) in editor preview -- deliberately out of scope for this
-	# slice, see docs/README.md, "The editor dock".
+	# No crane(s) in the schedule in editor preview -- their script doesn't run
+	# here, see docs/README.md, "The editor dock". They still come and go with
+	# their on-site windows.
 	_controller.set_schedule(schedule, _sequence_manager.building_parts, {})
+	_controller.set_site_cranes(_scene_cranes())
+	_controller.scrub_to(_controller.current_day, false)
 
 	_timeline_ui = TimelineUIScene.instantiate()
 	_ui_container.add_child(_timeline_ui)
@@ -367,6 +371,15 @@ func start_preview() -> void:
 	_refresh_formwork_bar()
 	_refresh_pour_bar()
 	_inspector.build(_sequence_manager, _current_schedule)
+
+## The edited scene's cranes: nodes carrying runtime/crane.gd (in the editor a
+## placeholder, so the script is compared rather than `is Crane`).
+func _scene_cranes() -> Array:
+	var root := EditorInterface.get_edited_scene_root()
+	if not root:
+		return []
+	return root.find_children("*", "Node3D", true, false).filter(
+		func(n): return n.get_script() == CraneScript)
 
 func stop_preview() -> void:
 	if not _preview_active:
@@ -383,6 +396,8 @@ func stop_preview() -> void:
 		# would be saved into the scene that way.
 		if part.has_meta("original_quaternion"):
 			part.quaternion = part.get_meta("original_quaternion")
+		# A pour cut short: its top (a child mesh) would stay behind otherwise.
+		AnimationApplier.end_fill(part)
 		part.visible = true
 	_restore_materials(_material_snapshot)
 	_material_snapshot.clear()
@@ -394,6 +409,7 @@ func stop_preview() -> void:
 	# The edited scene shows the finished ground, not wherever preview left it.
 	ConstructionTerrain.reset_all(get_tree())
 	SiteEquipment.reset_all(get_tree())
+	_controller.restore_site_cranes()
 	_sun_snapshot.clear()
 
 	# Generated formwork is a view of the schedule, not part of the scene, and

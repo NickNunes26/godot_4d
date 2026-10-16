@@ -116,8 +116,10 @@ comprueba si choca).
 Los elementos que se construyen en una posición y después se giran a la definitiva (un semiarco
 construido en vertical y abatido sobre su arranque) llevan un bloque `"rotate"` en
 `construction_steps.json`: `"rotate": {"group": "ARCO_P13", "duration_days": 2}` en cada una de sus
-acciones. Se construyen en vertical, girados sobre una rótula en la base de la pieza más baja, y
-bajan juntos cuando la última está terminada.
+acciones. Se construyen de pie, girados sobre una rótula en el borde trasero de la pieza más baja
+(en un arco, la esquina del lado de la pila, así que el arco queda delante de la pila), y bajan
+juntos cuando la última está terminada. `"angle_deg": 56` fija el ángulo del plano. Un arranque
+hormigonado en su sitio no entra en el grupo: la rótula queda entonces encima de él.
 
 Qué elige, a grandes rasgos, la deducción por el nombre: la demolición y el desbroce
 desaparecen; la excavación y la tierra vegetal se hunden; el hormigón, forjados, zapatas y pilares
@@ -278,9 +280,22 @@ de animación (**Auto types**, apartado 8): "Excavación" trae la excavadora, "H
   conservarlo. Si vuelves a pulsar **Maquinaria**, propone posiciones nuevas (antes detiene la
   vista previa, preguntando por los cambios sin guardar).
 - **La grúa autopropulsada** se coloca en cada izado junto a las piezas, así que no tiene marcador.
-- **Si la escena ya tiene una grúa tuya**, no se añade la grúa torre.
+- **Si la escena ya tiene una grúa tuya**, no se añade la grúa torre. Arrastra `tower_crane.tscn` /
+  `crawler_crane.tscn` (o cualquier escena con `runtime/crane.gd`), cada una con su nombre. En el
+  Inspector, **On Site From** / **On Site Until** (un id de actividad o una fecha) dicen cuándo está
+  en obra; vacíos, llega un día (**Setup Days**) antes de la primera actividad cuyo `crane_id` la
+  nombra y se va un día después de la última. La pluma de una grúa de orugas sube y baja para
+  llegar a cada izado.
+- **Desde dónde trabaja una grúa**: dale **Stands** (en el Inspector, una lista de marcadores:
+  añade nodos `Marker3D` en la escena y elígelos). Hará cada izado desde el más cercano a la pieza,
+  o desde el que diga la actividad en `"crane_stand"`, y se desplazará de uno a otro entre izados.
+  Mueve o gira un marcador en la vista 3D para colocar la grúa en otro sitio: una grúa no puede
+  estar sobre una carretera, bajo el tablero ni donde no se pueda montar.
 - **La excavadora está a escala**: una Caterpillar 320 construida con las medidas publicadas por
   el fabricante, que llega tan lejos y tan hondo como la real (`equipment/specs/`).
+- **Las excavaciones del terreno** (una plataforma del terreno con actividades de excavación y de
+  relleno, como el pozo de una zapata) las cavan y rellenan la excavadora y su camión, desde lo alto
+  de los taludes del pozo; si coinciden varias, cada una tiene su equipo.
 - **Sin maquinaria**: selecciona el SequenceManager y desmarca **Auto Equipment** (y borra
   SiteEquipment si lo añadiste).
 - Las máquinas son solo visuales: no se comprueban colisiones con ellas ni aparecen en la
@@ -303,7 +318,9 @@ o **F6** para la escena abierta.
   la cornisa de encima ya está puesta).
 - **Cámara**: haz clic en la vista para volar. **W A S D** para moverte, el ratón para mirar,
   **Q / E** para bajar / subir, **Mayús** para ir más rápido, **Esc** para soltar el ratón y volver
-  a usar la barra.
+  a usar la barra. Un panel translúcido abajo a la izquierda lo recuerda mientras juegas -- cada
+  tecla se ilumina al pulsarla -- y **H** lo oculta (SequenceManager > Show Controls Hint lo quita;
+  en las grabaciones nunca sale).
 
 ## 12. Graba un vídeo
 

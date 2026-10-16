@@ -225,7 +225,11 @@ too, and the banks start from there. The levelled area can come out up to that m
 drawn, never narrower.
 
 **On the timeline.** A platform with `activities` changes from natural to levelled between the
-earliest start and the latest finish of those actions (`TerrainPlatform.progress_on()`).
+earliest start and the latest finish of those actions (`TerrainPlatform.progress_on()`). One with
+`backfill_activities` (0.7.2) goes back to natural ground between the earliest start and latest
+finish of those -- a footing's pit, dug before the pour and filled once the column is out of the
+ground -- and a finished site (no schedule) shows it filled. Up to 32 platforms
+(`TerrainGrading.MAX_PLATFORMS`, matched by `ground.gdshader`'s arrays; it was 16).
 `TimelineController.scrub_to()` pushes the day to every terrain (`ConstructionTerrain.update_all()`,
 alongside `GeoSun`), so it works for Play, scrubbing, the dock preview and movie recording. Stop
 Preview puts the finished ground back. An id missing from the schedule counts as "no activity".

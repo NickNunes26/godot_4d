@@ -115,22 +115,13 @@ static func _fill_up(pt: Tween, part: Node3D, dur: float):
 	_grow_from_base(pt, part, dur)
 	AnimationApplier.fire_fill_up_particles(part, dur, {})
 
-## fill_up's growth without the pour: the element rises from its own base, the
-## way a wall goes up course by course. build_up is exactly this, and exists
-## because rise_up -- the only other "comes up" type -- moves the *whole*
-## element up from 10 m below, i.e. through the slab and foundations it is
-## built on.
+## fill_up's growth without the pour: the element comes up from its lowest
+## point, the way a wall goes up course by course. build_up is exactly this,
+## and exists because rise_up -- the only other "comes up" type -- moves the
+## *whole* element up from 10 m below, i.e. through the slab and foundations it
+## is built on.
 static func _grow_from_base(pt: Tween, part: Node3D, dur: float):
-	var orig_pos = part.get_meta("original_pos")
-	var orig_scale = part.get_meta("original_scale")
-	var aabb_bottom_y: float = part.get_meta("original_aabb").position.y
-	# Offset position so the mesh bottom stays fixed as scale:y grows from near-zero
-	var start_pos_y = orig_pos.y + aabb_bottom_y * (orig_scale.y - 0.01)
-	part.visible = true
-	part.scale = Vector3(orig_scale.x, 0.01, orig_scale.z)
-	part.position = Vector3(orig_pos.x, start_pos_y, orig_pos.z)
-	pt.tween_property(part, "scale:y", orig_scale.y, dur)
-	pt.parallel().tween_property(part, "position:y", orig_pos.y, dur)
+	pt.tween_method(func(p: float): AnimationApplier._fill_up_instant(part, p), 0.0, 1.0, dur)
 
 ## The root "pour_stream" block, or {} -- sibling of formwork_defaults, and
 ## placed there for the same reason: it describes how the *project* renders a
@@ -196,16 +187,19 @@ static func fire_fill_up_particles(part: Node3D, dur: float = 1.0, cfg: Dictiona
 	# something invisible, and TimelineController fires this once per pour.
 	if cfg.is_empty():
 		return
-	var orig_pos: Vector3 = part.get_meta("original_pos")
 	var basis: Basis = part.get_meta("original_transform").basis
 	var aabb: AABB = part.get_meta("original_aabb")
 	var center_local: Vector3 = aabb.get_center()
 
-	# Where the fill surface starts and ends, in the parent's space. basis
-	# carries the part's own scale/rotation, matching how _fill_up() and
-	# _fill_up_instant() grow the mesh along its local Y from the bottom face.
-	var bottom: Vector3 = orig_pos + basis * Vector3(center_local.x, aabb.position.y, center_local.z)
-	var top: Vector3 = orig_pos + basis * Vector3(center_local.x, aabb.position.y + aabb.size.y, center_local.z)
+	# Where the fill surface starts and ends: the part's lowest and highest
+	# points as it stands now (a hinged part may be standing up), straight up in
+	# world space like the level _fill_up_instant() raises; over its centre. In
+	# the parent's space, where the emitter goes.
+	var span_y := fill_extent(part)
+	var centre_w: Vector3 = part.global_transform * center_local
+	var to_parent: Transform3D = (part.get_parent() as Node3D).global_transform.affine_inverse() if part.get_parent() is Node3D else Transform3D.IDENTITY
+	var bottom: Vector3 = to_parent * Vector3(centre_w.x, span_y.x, centre_w.z)
+	var top: Vector3 = to_parent * Vector3(centre_w.x, span_y.y, centre_w.z)
 
 	# Sized off the element's overall span, not just the height being filled: a
 	# 10 m footing only 1.8 m thick is viewed from far enough away that a drop
@@ -435,6 +429,9 @@ static func apply_instant_hinged(part: Node3D, anim_type: String, progress: floa
 	var parent := part.get_parent() as Node3D
 	var to_world := parent.global_transform if parent else Transform3D.IDENTITY
 	part.transform = to_world.affine_inverse() * swing * to_world * part.transform
+	# A pour's level is straight up from where the part stands *now*.
+	if anim_type in ["fill_up", "build_up"]:
+		_update_fill(part)
 
 ## Puts a part's own rotation back, keeping its position and scale -- the
 ## rotation SequenceManager.initialize_parts() recorded ("original_quaternion"),
@@ -604,26 +601,162 @@ static func _sink_down_instant(part: Node3D, progress: float) -> void:
 	var y = Tween.interpolate_value(orig_pos.y, -10.0, progress, 1.0, Tween.TRANS_CUBIC, Tween.EASE_IN)
 	part.position = Vector3(orig_pos.x, y, orig_pos.z)
 
+## The pour: the part stays whole, in place and at its own size, and is drawn
+## only up to a level that rises in world +Y from its lowest point to its
+## highest -- whatever its orientation, so a tilted or standing dovela fills
+## from the bottom like concrete in a form, never along its own axis. The cut
+## is closed by a flat top at the level (core/fill_clip.gdshader). It used to
+## scale the part along its *local* Y from a sliver, which on anything not
+## upright read as a squashed piece being stretched sideways.
+##
+## The level is measured on the part as it stands: apply_instant_hinged()
+## measures it again after the swing (_update_fill()).
 static func _fill_up_instant(part: Node3D, progress: float) -> void:
-	var orig_pos: Vector3 = part.get_meta("original_pos")
-	var orig_scale: Vector3 = part.get_meta("original_scale")
-	var aabb_bottom_y: float = part.get_meta("original_aabb").position.y
-	var start_pos_y = orig_pos.y + aabb_bottom_y * (orig_scale.y - 0.01)
-	if progress <= 0.0:
-		part.visible = false
-		part.scale = Vector3(orig_scale.x, 0.01, orig_scale.z)
-		part.position = Vector3(orig_pos.x, start_pos_y, orig_pos.z)
-		return
-	part.visible = true
-	if progress >= 1.0:
-		part.scale = orig_scale
-		part.position = orig_pos
-		return
-	var scale_y = Tween.interpolate_value(0.01, orig_scale.y - 0.01, progress, 1.0, Tween.TRANS_LINEAR, Tween.EASE_IN_OUT)
-	var pos_y = Tween.interpolate_value(start_pos_y, orig_pos.y - start_pos_y, progress, 1.0, Tween.TRANS_LINEAR, Tween.EASE_IN_OUT)
-	part.scale = Vector3(orig_scale.x, scale_y, orig_scale.z)
-	part.position = Vector3(orig_pos.x, pos_y, orig_pos.z)
+	part.scale = part.get_meta("original_scale")
+	part.position = part.get_meta("original_pos")
+	part.visible = progress > 0.0
+	part.set_meta(_FILL_META, progress)
+	_update_fill(part)
 	# Particle burst is a live-only side effect; skipped here.
+
+const _FILL_META := "_c4d_fill_progress"
+const _FILL_ORIGINAL_META := "_c4d_fill_original"
+const _FILL_POINTS_META := "_c4d_fill_points"
+const _FILL_WELD_META := "_c4d_fill_weld"
+const FILL_SHADER := preload("res://addons/construction_4d_tool/core/fill_clip.gdshader")
+
+## Puts the clip on while the part is part-filled (0 < progress < 1) -- its
+## materials swapped for fill_clip ones, the level set from its current pose --
+## and takes it off otherwise, the part's own materials back.
+static func _update_fill(part: Node3D) -> void:
+	var progress: float = part.get_meta(_FILL_META, 1.0)
+	var meshes := _fade_targets(part)
+	if progress <= 0.0 or progress >= 1.0:
+		for m in meshes:
+			var cap := m.get_node_or_null(POUR_CAP) as MeshInstance3D
+			if cap:
+				m.remove_child(cap)
+				cap.free()
+			if m.has_meta(_FILL_ORIGINAL_META):
+				var originals: Array = m.get_meta(_FILL_ORIGINAL_META)
+				for s in mini(originals.size(), m.get_surface_override_material_count()):
+					m.set_surface_override_material(s, originals[s])
+				m.remove_meta(_FILL_ORIGINAL_META)
+		return
+	var span_y := fill_extent(part)
+	var level := lerpf(span_y.x, span_y.y, progress)
+	for m in meshes:
+		if not m.has_meta(_FILL_ORIGINAL_META):
+			# The cap needs outward-front faces (MeshPrep); once per mesh.
+			m.mesh = MeshPrep.outward(m.mesh)
+			var originals: Array = []
+			for s in m.get_surface_override_material_count():
+				originals.append(m.get_surface_override_material(s))
+				m.set_surface_override_material(s, _fill_material(m.get_active_material(s)))
+			m.set_meta(_FILL_ORIGINAL_META, originals)
+		for s in m.get_surface_override_material_count():
+			var mat := m.get_surface_override_material(s) as ShaderMaterial
+			if mat:
+				mat.set_shader_parameter("fill_y", level)
+		_update_pour_cap(m, level)
+
+## Ends a pour wherever it is: the part's own materials back, its top taken
+## away. The editor's Stop Preview calls it, a pour being cut short there.
+##
+## Also drops what the pour kept on the part and its meshes (vertex lists,
+## topology), which would otherwise be saved with the scene.
+static func end_fill(part: Node3D) -> void:
+	if part.has_meta(_FILL_META):
+		part.set_meta(_FILL_META, 1.0)
+		_update_fill(part)
+		part.remove_meta(_FILL_META)
+	for m in _fade_targets(part):
+		for key in [_FILL_POINTS_META, _FILL_WELD_META]:
+			if m.has_meta(key):
+				m.remove_meta(key)
+
+## The top of the pour: the part's horizontal section at the level, filled
+## (MeshPrep.section_cap()) -- for a hollow section the ring of its walls, the
+## core left open. A child mesh the pour adds and takes away; never saved (no
+## owner). Drawn with the part's fill material, unclipped and a little darker.
+static func _update_pour_cap(m: MeshInstance3D, level: float) -> void:
+	var cap := m.get_node_or_null(POUR_CAP) as MeshInstance3D
+	if not m.has_meta(_FILL_WELD_META):
+		m.set_meta(_FILL_WELD_META, MeshPrep.welded(m.mesh))
+	var section := MeshPrep.section_cap(m.mesh, m.global_transform, level, m.get_meta(_FILL_WELD_META))
+	if not section:
+		if cap:
+			cap.visible = false
+		return
+	if not cap:
+		cap = MeshInstance3D.new()
+		cap.name = POUR_CAP
+		cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		m.add_child(cap)
+		var src := m.get_surface_override_material(0) as ShaderMaterial
+		var mat: ShaderMaterial = src.duplicate() if src else _fill_material(null)
+		mat.set_shader_parameter("fill_y", 1e9)
+		var shade: float = mat.get_shader_parameter("top_shade") if mat.get_shader_parameter("top_shade") != null else 0.85
+		mat.set_shader_parameter("albedo", (mat.get_shader_parameter("albedo") as Color) * Color(shade, shade, shade, 1.0))
+		cap.material_override = mat
+	cap.mesh = section
+	cap.visible = true
+
+const POUR_CAP := "_PourCap"
+
+## The part's lowest and highest points in world Y as it stands now (x = min,
+## y = max), from its meshes' vertices, read once per part and kept.
+static func fill_extent(part: Node3D) -> Vector2:
+	var lo := INF
+	var hi := -INF
+	for m in _fade_targets(part):
+		var mesh_node := m as MeshInstance3D
+		if not mesh_node.mesh:
+			continue
+		if not mesh_node.has_meta(_FILL_POINTS_META):
+			var pts := PackedVector3Array()
+			for s in mesh_node.mesh.get_surface_count():
+				pts.append_array(mesh_node.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX])
+			mesh_node.set_meta(_FILL_POINTS_META, pts)
+		var xf: Transform3D = mesh_node.global_transform
+		for v in mesh_node.get_meta(_FILL_POINTS_META):
+			var y: float = (xf * v).y
+			lo = minf(lo, y)
+			hi = maxf(hi, y)
+	return Vector2(lo, hi) if lo <= hi else Vector2.ZERO
+
+## A fill_clip material reproducing `src` (a StandardMaterial3D/ORM; anything
+## else gets its albedo grey).
+static func _fill_material(src: Material) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = FILL_SHADER
+	var b := src as BaseMaterial3D
+	if not b:
+		m.set_shader_parameter("albedo", Color(0.7, 0.7, 0.68))
+		return m
+	m.set_shader_parameter("albedo", b.albedo_color)
+	if b.albedo_texture:
+		m.set_shader_parameter("has_albedo_tex", true)
+		m.set_shader_parameter("albedo_tex", b.albedo_texture)
+	m.set_shader_parameter("roughness", b.roughness)
+	if b.roughness_texture:
+		m.set_shader_parameter("has_roughness_tex", true)
+		m.set_shader_parameter("roughness_tex", b.roughness_texture)
+	m.set_shader_parameter("metallic", b.metallic)
+	m.set_shader_parameter("specular", b.metallic_specular)
+	m.set_shader_parameter("triplanar", b.uv1_triplanar)
+	m.set_shader_parameter("world_triplanar", b.uv1_world_triplanar)
+	m.set_shader_parameter("uv1_scale", b.uv1_scale)
+	m.set_shader_parameter("uv1_offset", b.uv1_offset)
+	m.set_shader_parameter("uv1_sharpness", b.uv1_triplanar_sharpness)
+	if b.detail_enabled and b.detail_albedo:
+		m.set_shader_parameter("has_detail", true)
+		m.set_shader_parameter("detail_tex", b.detail_albedo)
+		m.set_shader_parameter("uv2_triplanar", b.uv2_triplanar)
+		m.set_shader_parameter("uv2_scale", b.uv2_scale)
+		m.set_shader_parameter("uv2_offset", b.uv2_offset)
+		m.set_shader_parameter("uv2_sharpness", b.uv2_triplanar_sharpness)
+	return m
 
 ## Every MeshInstance3D whose material the fade animations should drive: the
 ## part itself when it is one, else its descendants.
@@ -638,7 +771,7 @@ static func _fill_up_instant(part: Node3D, progress: float) -> void:
 static func _fade_targets(part: Node3D) -> Array:
 	if part is MeshInstance3D:
 		return [part]
-	return part.find_children("*", "MeshInstance3D", true, false)
+	return part.find_children("*", "MeshInstance3D", true, false).filter(func(n): return n.name != POUR_CAP)
 
 ## Hidden until it starts (like every other type -- it used to sit visible at
 ## alpha 0 from day 0, paying for a transparent pass for nothing).

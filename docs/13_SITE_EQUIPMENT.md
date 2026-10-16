@@ -105,6 +105,16 @@ scene, each machine stands on the terrain height at its own spot instead
   building's centre. **Jib** = the farthest building-box corner + 6 m, rounded up to 5 m, 30–75 m.
   **Height** (ground to the underside of the jib) = the tallest part within the jib's reach + 10 m,
   at least 18 m. **Laydown**: 10 m beside the mast, the first of four spots clear of the building.
+- **Excavator at the terrain's pits** (0.7.2): every `TerrainPlatform` dug by an activity
+  (`activities`) or filled back by one (`backfill_activities`) -- a footing's pit -- is a job
+  for the excavator and its truck, whatever the activity is called: digging over the first,
+  filling (the truck tips its load) over the second. The crew stands on natural ground just past
+  the top of the banks -- walking out from the middle of the pit until the ground under its tracks
+  is neither cut nor filled (`ConstructionTerrain.natural_world_height_at()` against
+  `world_height_at()`), two metres further -- facing the pit, on the nearest of eight ways out not
+  against anything already built by the first dig. Pits worked at the same time get a crew each
+  (`DigRig2`, `DigRig3`... under the SiteEquipment, made as needed), their cycles out of step. Away
+  from a job the crew is hidden: it has no place of its own. `_pit_jobs()`, `_pit_site()`.
 - **Excavator**: off the front (+Z) edge of the pit, mid-way along it, facing in. The pit is the
   dig parts that go more than 0.5 m below ground; stripping topsoil off the whole plot is excavator
   work too, but the machine belongs at the hole. At least 4 m off, and further, a metre at a time,
@@ -192,8 +202,10 @@ earlier in the tree).
   across and down; only its start moved to the laydown area.
 - **Tower crane follows `drop_in` pieces from wherever they appear**, just above their place; it
   doesn't fetch them from the laydown first (that is what `install` does).
-- **One excavator, one truck, one mobile crane.** Overlapping mobile jobs: the earliest wins. The
-  excavator doesn't travel along the pit.
+- **One mobile crane; one excavator crew for the model's own pit.** Overlapping mobile jobs: the
+  earliest wins. The excavator doesn't travel along the pit. (The terrain's pits get a crew per
+  overlapping job, above.) A pit's crew stands at the top of its banks whatever the depth -- on a
+  deep pit, further from the bottom than the machine reaches.
 - **The truck doesn't bring concrete** (`concrete_pour` with a mixer body was listed as "later").
 - **Markers save positions only**; the excavator faces −Z of its marker, so turn the marker to
   turn it.

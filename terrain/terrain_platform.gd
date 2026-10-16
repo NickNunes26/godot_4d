@@ -51,28 +51,48 @@ extends Resource
 	set(value):
 		activities = value
 		emit_changed()
+## Schedule action ids that fill it back in -- the pit dug for a footing, filled
+## once the footing and the first lift of its column stand above the ground.
+## Between the earliest start and the latest finish among them the ground goes
+## back from levelled to natural. Empty: it stays levelled.
+@export var backfill_activities: PackedStringArray = PackedStringArray():
+	set(value):
+		backfill_activities = value
+		emit_changed()
 ## Show the levelled area and its banks as bare earth instead of the orthophoto.
 @export var bare_earth: bool = true:
 	set(value):
 		bare_earth = value
 		emit_changed()
 
-## 0 (natural ground) .. 1 (levelled) on `day` of `schedule`.
+## 0 (natural ground) .. 1 (levelled) on `day` of `schedule`: up over its
+## activities, and back down over its backfill_activities if it has any. With
+## no schedule (the finished site) a backfilled platform is natural ground.
 func progress_on(schedule: ConstructionSchedule, day: float) -> float:
-	if activities.is_empty() or not schedule:
+	var back := _window(backfill_activities, schedule)
+	if not schedule:
+		return 0.0 if not backfill_activities.is_empty() else 1.0
+	if not is_nan(back.x) and day > back.x:
+		return 0.0 if day >= back.y else 1.0 - (day - back.x) / maxf(back.y - back.x, 1e-6)
+	var dig := _window(activities, schedule)
+	if is_nan(dig.x):
 		return 1.0
+	if day <= dig.x:
+		return 0.0
+	if day >= dig.y:
+		return 1.0
+	return (day - dig.x) / maxf(dig.y - dig.x, 1e-6)
+
+## (earliest start, latest finish) of `ids` in `schedule`; NAN when none is in it.
+static func _window(ids: PackedStringArray, schedule: ConstructionSchedule) -> Vector2:
+	if ids.is_empty() or not schedule:
+		return Vector2(NAN, NAN)
 	var start := INF
 	var finish := -INF
-	for id in activities:
+	for id in ids:
 		var span := schedule.get_action_day_range(id)
 		if span.is_empty():
 			continue
 		start = minf(start, span.start_day)
 		finish = maxf(finish, span.finish_day)
-	if start == INF:
-		return 1.0
-	if day <= start:
-		return 0.0
-	if day >= finish:
-		return 1.0
-	return (day - start) / (finish - start)
+	return Vector2(start, finish) if start != INF else Vector2(NAN, NAN)

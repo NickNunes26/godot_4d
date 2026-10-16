@@ -7,13 +7,35 @@ extends Node3D
 ## Flip to true only when actively debugging crane motion.
 var debug_logging: bool = false
 
+@export_group("On site")
+## When the crane arrives: an action id (its start) or a date (YYYY-MM-DD).
+## Empty: setup_days before the first action that names this crane in its
+## `crane_id`, or the first lift it is given. With neither, and nothing in
+## on_site_until either, the crane stands there for the whole schedule.
+@export var on_site_from: String = ""
+## When it leaves: an action id (its finish) or a date. Empty: setup_days
+## after the last action naming it / the last lift it is given.
+@export var on_site_until: String = ""
+## Days to rig and to strip it, around the work that sets its window.
+@export_range(0.0, 30.0, 0.5) var setup_days: float = 1.0
+
+@export_group("Stands")
+## Where the crane works from: markers (a Marker3D shows in the editor) that it
+## moves to for its lifts -- a crawler crane walking along a deck, say. Each
+## lift is made from the stand its action names in `crane_stand`, or else the
+## one nearest the piece; between lifts from different stands the crane drives
+## across in the gap. It takes the marker's position and its turn about Y.
+## Empty: it works from where it is.
+@export var stands: Array[NodePath] = []
+
 var _arm_tween:    Tween  = null
 var _tracked_part: Node3D = null
 var _track_arm:    bool   = false
 
-var _arm_x_scale:                  float       = 1.0
-var _arm_fwd_angle0:               float       = 0.0
-var _arm_initial_global_transform: Transform3D = Transform3D.IDENTITY
+var _arm_x_scale:   float       = 1.0
+# The arm at rest, relative to the crane's root: the crane may move between
+# stands, and the arm has to slew from wherever it stands now.
+var _arm_rest_local: Transform3D = Transform3D.IDENTITY
 
 var _hook_initial_world_y:   float   = 0.0
 var _hook_height:            float   = 0.0
@@ -39,14 +61,27 @@ var _track_arm_frame: int  = -1  # frame when _track_arm last became true
 ## it's not present.
 @onready var _pickup_zone: Node3D = find_child("PickupZone", true, false)
 
+## Optional luffing boom: a crawler or lattice-boom crane's "Boom" under Arm,
+## its head being Track. With one, a lift's radius is reached by raising or
+## lowering the boom about its foot -- the head, and the rope with it, stays at
+## the boom's tip -- instead of running Track out along a horizontal jib,
+## which on such a crane pulled the hook away from the boom.
+@onready var _boom: Node3D = find_child("Boom", true, false)
+var _boom_initial:  Transform3D = Transform3D.IDENTITY
+var _boom_foot:     Vector3     = Vector3.ZERO  # Arm-local
+var _boom_length:   float       = 0.0
+var _boom_angle0:   float       = 0.0
+var _boom_angle:    float       = 0.0
+const BOOM_MIN_DEG := 15.0
+const BOOM_MAX_DEG := 85.0
+
 func _ready():
 	if not _arm:
 		push_warning("Crane: Arm not found"); return
+	_setup_boom()
 
-	var forward := _arm.global_transform.basis.x
-	_arm_x_scale                  = forward.length()
-	_arm_fwd_angle0               = atan2(forward.x, forward.z)
-	_arm_initial_global_transform = _arm.global_transform
+	_arm_x_scale    = _arm.global_transform.basis.x.length()
+	_arm_rest_local = global_transform.affine_inverse() * _arm.global_transform
 
 	if _track:
 		_track_initial_local_pos = _track.position
@@ -109,14 +144,17 @@ func _process(_delta):
 		var dir := part_xz - Vector2(_arm.global_position.x, _arm.global_position.z)
 		_set_arm_world_angle(atan2(dir.x, dir.y))
 
-	# --- Track slide ---
+	# --- Track slide (or boom luff) ---
 	var dist_world := 0.0
 	if _track and _arm:
 		var arm_xz := Vector2(_arm.global_position.x, _arm.global_position.z)
 		dist_world = arm_xz.distance_to(part_xz)
-		var new_pos := _track.position
-		new_pos.x = dist_world / _arm_x_scale
-		_track.position = new_pos
+		if _boom_length > 0.0:
+			_set_boom_angle(boom_angle_for(dist_world / _arm_x_scale))
+		else:
+			var new_pos := _track.position
+			new_pos.x = dist_world / _arm_x_scale
+			_track.position = new_pos
 
 	# --- Hook Y ---
 	# hook_pivot_y: position hook so its BOTTOM (not pivot) aligns with part_top_y
@@ -182,9 +220,10 @@ func _process(_delta):
 	print("  track.position.x   = ", snappedf(_track.position.x if _track else 0.0, 0.1))
 
 func _set_arm_world_angle(angle: float):
-	var delta := angle - _arm_fwd_angle0
-	var new_global := _arm_initial_global_transform
-	new_global.basis = Basis(Vector3.UP, delta) * _arm_initial_global_transform.basis
+	var rest := global_transform * _arm_rest_local
+	var delta := angle - _rest_fwd()
+	var new_global := rest
+	new_global.basis = Basis(Vector3.UP, delta) * rest.basis
 	_arm.global_transform = new_global
 
 ## Where this crane's materials appear before being lifted -- called by
@@ -200,10 +239,42 @@ func _set_arm_world_angle(angle: float):
 ## target_pos + (15, 0, 0) -- the single-crane behavior this codebase shipped
 ## with before multi-crane support -- when no PickupZone child exists, so an
 ## existing crane scene with no PickupZone node keeps working unchanged.
-func get_pickup_position(target_pos: Vector3) -> Vector3:
+##
+## With a `stand`, where the laydown will be once the crane stands there: it
+## travels with the crane, keeping its place relative to it.
+func get_pickup_position(target_pos: Vector3, stand: Node3D = null) -> Vector3:
+	# The schedule asks while SequenceManager is getting ready, which is before
+	# a crane later in the tree has run its own _ready() (@onready unset).
+	if not _pickup_zone:
+		_pickup_zone = find_child("PickupZone", true, false)
 	if _pickup_zone:
+		if stand:
+			return stand_pose(stand) * (global_transform.affine_inverse() * _pickup_zone.global_position)
 		return _pickup_zone.global_position
 	return target_pos + Vector3(15.0, 0, 0)
+
+## The arm's heading at rest (world, atan2 of its +X), wherever the crane is.
+func _rest_fwd() -> float:
+	var fwd := (global_transform * _arm_rest_local).basis.x
+	return atan2(fwd.x, fwd.z)
+
+## The stand markers that resolve (see `stands`).
+func stand_nodes() -> Array:
+	return ConstructionSchedule.crane_stands(self)
+
+## The stand a lift of a piece at `target` is made from: the one named
+## `stand_name` if there is one, else the nearest in plan. null without stands.
+func stand_for(target: Vector3, stand_name: String = "") -> Node3D:
+	return ConstructionSchedule.nearest_stand(self, target, stand_name)
+
+## The crane's transform at a stand: the marker's position and turn about Y.
+static func stand_pose(stand: Node3D) -> Transform3D:
+	return ConstructionSchedule.stand_pose(stand)
+
+## Moves the crane to `pose` (TimelineController does, between stands). The
+## arm, trolley and hook are kept relative to the root, so they follow.
+func place_at(pose: Transform3D) -> void:
+	global_transform = pose
 
 func swing(pickup: Vector3, _target: Vector3, lift_dur: float, _slide_dur: float, tracked_part: Node3D):
 	if not _arm:
@@ -246,11 +317,18 @@ func retract(dur: float = 2.0):
 	if _arm_tween:
 		_arm_tween.kill()
 	var t := create_tween().set_parallel(true)
+	# Kept as the crane's tween so that a swing straight after (a lift starting
+	# within `dur` of a scrub) stops it: left running, it went on pulling the
+	# trolley -- or the boom -- back to rest under the piece being followed.
+	_arm_tween = t
 	var current_fwd := atan2(_arm.global_transform.basis.x.x, _arm.global_transform.basis.x.z)
-	var angle_diff  := fmod(_arm_fwd_angle0 - current_fwd + PI, TAU) - PI
+	var angle_diff  := fmod(_rest_fwd() - current_fwd + PI, TAU) - PI
 	t.tween_method(_set_arm_world_angle, current_fwd, current_fwd + angle_diff, dur) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	if _track:
+	if _boom_length > 0.0:
+		t.tween_method(_set_boom_angle, _boom_angle, _boom_angle0, dur) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	elif _track:
 		t.tween_property(_track, "position", _track_initial_local_pos, dur) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	if _hook:
@@ -259,6 +337,71 @@ func retract(dur: float = 2.0):
 	if _rope:
 		t.tween_property(_rope, "scale:y", _rope_initial_scale_y, dur) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+## Measures the boom in its modelled pose, in Arm space: its head is Track's
+## position, its foot the middle of its far end from the head, and its angle
+## above the arm's horizontal (+X). Only a Boom that is a child of Arm, with a
+## Track that is too, luffs; anything else keeps the sliding trolley.
+func _setup_boom() -> void:
+	if not (_boom and _track and _boom.get_parent() == _arm and _track.get_parent() == _arm):
+		_boom = null
+		return
+	var to_arm := _arm.global_transform.affine_inverse()
+	var points := PackedVector3Array()
+	var meshes: Array = [_boom] if _boom is MeshInstance3D else []
+	meshes.append_array(_boom.find_children("*", "MeshInstance3D", true, false))
+	for m in meshes:
+		if not (m as MeshInstance3D).mesh:
+			continue
+		var xf: Transform3D = to_arm * (m as Node3D).global_transform
+		for s in (m as MeshInstance3D).mesh.get_surface_count():
+			for v in (m as MeshInstance3D).mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]:
+				points.append(xf * v)
+	if points.is_empty():
+		_boom = null
+		return
+	var head := _track.position
+	# Along the boom: from the middle of its points towards the head. The foot
+	# is the middle of the heel -- the points furthest back along that line
+	# (within half a metre), averaged over the boom's width and depth.
+	var mid := Vector3.ZERO
+	for p in points:
+		mid += p
+	mid /= points.size()
+	var along := (head - mid).normalized()
+	var back := INF
+	for p in points:
+		back = minf(back, (p - mid).dot(along))
+	var sum := Vector3.ZERO
+	var n := 0
+	for p in points:
+		if (p - mid).dot(along) <= back + 0.5:
+			sum += p
+			n += 1
+	_boom_foot = sum / n
+	_boom_foot.z = head.z
+	var d := head - _boom_foot
+	_boom_length = Vector2(d.x, d.y).length()
+	_boom_angle0 = atan2(d.y, d.x)
+	_boom_angle = _boom_angle0
+	_boom_initial = _boom.transform
+
+## The boom angle that puts its head `radius` (Arm-local units) from the slew
+## centre, within BOOM_MIN_DEG..BOOM_MAX_DEG. Static geometry, no state.
+func boom_angle_for(radius: float) -> float:
+	if _boom_length <= 0.0:
+		return 0.0
+	var c := clampf((radius - _boom_foot.x) / _boom_length, cos(deg_to_rad(BOOM_MAX_DEG)), cos(deg_to_rad(BOOM_MIN_DEG)))
+	return acos(c)
+
+## Pitches the boom about its foot to `angle` and keeps Track at its head.
+func _set_boom_angle(angle: float) -> void:
+	if _boom_length <= 0.0:
+		return
+	_boom_angle = angle
+	var pivot := Transform3D(Basis.IDENTITY, _boom_foot)
+	_boom.transform = pivot * Transform3D(Basis(Vector3(0, 0, 1), angle - _boom_angle0), Vector3.ZERO) * pivot.affine_inverse() * _boom_initial
+	_track.position = _boom_foot + Vector3(cos(angle), sin(angle), 0.0) * _boom_length
 
 func _mesh_subtree_min_world_y(root: Node3D) -> float:
 	var min_y := root.global_position.y

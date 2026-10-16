@@ -53,8 +53,8 @@ uniform float near_tint = 0.45;
 uniform bool has_grading = false;
 uniform sampler2D grading : filter_nearest, repeat_disable; // RGBAF, see TerrainGrading
 uniform ivec4 grading_rect = ivec4(0); // first column, first row, columns, rows
-uniform float grade_progress[16];
-uniform float grade_bare[16];
+uniform float grade_progress[32];
+uniform float grade_bare[32];
 uniform vec3 earth_color : source_color = vec3(0.55, 0.44, 0.31);
 
 varying vec2 terrain_xz;
@@ -68,14 +68,14 @@ int slot_of(float code) {
 
 float slot_progress(float code) {
 	int i = slot_of(code);
-	return i < 0 ? 0.0 : grade_progress[min(i, 15)];
+	return i < 0 ? 0.0 : grade_progress[min(i, 31)];
 }
 
 float slot_earth(float change, float code) {
 	int i = slot_of(code);
 	if (i < 0) return 0.0;
 	float w = fract(code) > 0.25 ? 1.0 : clamp(abs(change) / 0.3, 0.0, 1.0);
-	return w * grade_progress[min(i, 15)] * grade_bare[min(i, 15)];
+	return w * grade_progress[min(i, 31)] * grade_bare[min(i, 31)];
 }
 
 vec4 grading_at(ivec2 ij) {

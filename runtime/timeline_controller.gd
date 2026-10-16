@@ -37,6 +37,9 @@ var _schedule: ConstructionSchedule = null
 var _building_parts: Dictionary = {}
 # Parts scrub_to() last drove through a "rotate" swing (part_name -> true).
 var _hinged: Dictionary = {}
+# Scene cranes whose visibility follows their on-site window, and what it was.
+var _site_cranes: Array = []
+var _site_cranes_visible: Dictionary = {}
 # crane name -> Crane, from SequenceManager._find_all_cranes() (or {} for the
 # Phase 3 dock's editor preview, which deliberately previews with no crane --
 # see docs/README.md, "The editor dock"). Which crane services which
@@ -59,6 +62,8 @@ func set_schedule(schedule: ConstructionSchedule, building_parts: Dictionary, cr
 	_schedule = schedule
 	_building_parts = building_parts
 	_cranes = cranes
+	if not cranes.is_empty():
+		set_site_cranes(cranes.values())
 	# retract_crane=false: nothing has moved yet at initial setup, so there's
 	# nothing to park. This also sidesteps a node-readiness ordering issue â€”
 	# this runs inside SequenceManager._ready(), and if a crane is a later
@@ -106,10 +111,49 @@ func scrub_to(target_day: float, retract_crane: bool = true) -> void:
 			crane.retract()
 		if get_tree():
 			get_tree().call_group("fill_up_particles", "queue_free")
+	# The scene's own cranes, within their on-site windows. Before SiteEquipment,
+	# which has the last word on the tower crane it generates (also a Crane).
+	for crane in _site_cranes:
+		if is_instance_valid(crane):
+			crane.visible = _schedule.crane_on_site(crane, current_day)
+			# Done with its piece: the hook comes off and the boom or trolley goes
+			# back to rest, instead of following the piece once it is in place
+			# (and, on a crane with stands, as it drives to the next one).
+			if crane.has_method("retract") and crane.get("_tracked_part") != null 					and not _schedule.crane_lifting(crane, current_day):
+				crane.retract()
+			# A crane with stands goes where its work is (crane_pose()).
+			var pose = _schedule.crane_pose(crane, current_day)
+			if pose != null:
+				if crane.has_method("place_at"):
+					crane.place_at(pose)
+				else:
+					crane.global_transform = pose
 	# Site plant comes and goes with its activities. After the retract above,
 	# so a crane following a piece picks it straight back up.
 	if is_inside_tree():
 		SiteEquipment.update_all(get_tree(), _schedule, current_day, _building_parts)
+
+## The scene's cranes, shown only while on site (ConstructionSchedule.
+## crane_window()) and, with stands, moved to the one they work from
+## (crane_pose()). Play passes them through set_schedule(); the editor
+## preview, whose schedule gets no cranes (their script doesn't run in the
+## editor), hands them over here. Their visibility is remembered for
+## restore_site_cranes().
+func set_site_cranes(cranes: Array) -> void:
+	restore_site_cranes()
+	for c in cranes:
+		if c is Node3D:
+			_site_cranes.append(c)
+			_site_cranes_visible[c] = {"visible": c.visible, "transform": c.transform}
+
+## Puts back every crane's own visibility and place (the editor's Stop Preview).
+func restore_site_cranes() -> void:
+	for c in _site_cranes_visible:
+		if is_instance_valid(c):
+			c.visible = _site_cranes_visible[c].visible
+			c.transform = _site_cranes_visible[c].transform
+	_site_cranes.clear()
+	_site_cranes_visible.clear()
 
 ## Resumes time advancement; _process() takes over from here.
 func play() -> void:

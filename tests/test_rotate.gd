@@ -46,6 +46,20 @@ func _group_centre(parts: Array) -> Vector3:
 		box = b if i == 0 else box.merge(b)
 	return box.get_center()
 
+## How far the boxes reach behind `pivot` (negative: behind), measured along
+## the way the group leans in its modelled pose; `xf` is applied to their live
+## corners. 0 when the back face stands right over the pivot.
+func _reach_back(parts: Array, xf: Transform3D, pivot: Vector3) -> float:
+	var lean := Vector3(cos(deg_to_rad(40)), 0, 0)
+	var c: Node3D = parts[0].get_parent()
+	lean = (c.global_transform.basis * lean)
+	lean = Vector3(lean.x, 0, lean.z).normalized()
+	var most := INF
+	for p in parts:
+		for i in 8:
+			most = minf(most, (xf * (p.global_transform * p.mesh.get_aabb().get_endpoint(i)) - pivot).dot(lean))
+	return most
+
 func _same(a: Transform3D, b: Transform3D) -> bool:
 	return a.origin.distance_to(b.origin) < 1e-3 and (a.basis.x - b.basis.x).length() < 1e-4 \
 		and (a.basis.y - b.basis.y).length() < 1e-4 and (a.basis.z - b.basis.z).length() < 1e-4
@@ -67,14 +81,18 @@ func _run() -> void:
 		parts[p.name] = p
 		dovelas.append(p)
 
-	print("=== hinge_geometry: the pivot under the lowest piece, standing the group up")
+	print("=== hinge_geometry: the pivot on the back edge of the lowest piece, standing the group up")
 	var geo := ConstructionSchedule.hinge_geometry(dovelas)
-	var low_box: AABB = dovelas[0].global_transform * dovelas[0].mesh.get_aabb()
-	_check("pivot is the middle of the lowest piece's base",
-		geo.pivot.distance_to(Vector3(low_box.get_center().x, low_box.position.y, low_box.get_center().z)) < 1e-4, true)
+	# D1's end face at the springing has its top (extrados) edge at local
+	# (-2.5, +0.75, z): the furthest back, against the way the arch leans.
+	_check("pivot is the middle of the lowest piece's back edge",
+		geo.pivot.distance_to(dovelas[0].global_transform * Vector3(-2.5, 0.75, 0.0)) < 1e-4, true)
 	_check("axis is horizontal", absf(geo.axis.y) < 1e-6, true)
-	_check("angle stands the pivot-to-centre line upright",
-		absf(rad_to_deg(geo.angle) - rad_to_deg((_group_centre(dovelas) - geo.pivot).angle_to(Vector3.UP))) < 1e-3, true)
+	_check("angle stands the straight group's back face upright: 50 degrees (%.4f)" % rad_to_deg(geo.angle),
+		absf(rad_to_deg(geo.angle) - 50.0) < 1e-3, true)
+	var stood := Transform3D(Basis.IDENTITY, geo.pivot) * Transform3D(Basis(geo.axis, geo.angle), Vector3.ZERO) * Transform3D(Basis.IDENTITY, -geo.pivot)
+	var back := _reach_back(dovelas, stood, geo.pivot)
+	_check("stood up, nothing passes behind the hinge, and it is right up to it (%.4f m)" % back, absf(back) < 1e-3, true)
 	_check("no geometry, no hinge", ConstructionSchedule.hinge_geometry([Node3D.new()]), {})
 
 	print("\n=== the swing starts when the last piece is built, plus lag_days")
@@ -100,8 +118,8 @@ func _run() -> void:
 
 	print("\n=== built standing up, as one rigid body")
 	tc.scrub_to(6.5)
-	var up_angle := rad_to_deg((_group_centre(dovelas) - h.pivot).angle_to(Vector3.UP))
-	_check("before the swing the group stands upright (%.3f deg off)" % up_angle, up_angle < 0.01, true)
+	var live_back := _reach_back(dovelas, Transform3D(), h.pivot)
+	_check("before the swing the group stands with its back face over the hinge (%.4f m)" % live_back, absf(live_back) < 1e-3, true)
 	_check("pieces keep their spacing", absf(_centre(dovelas[0]).distance_to(_centre(dovelas[1])) - 5.0) < 1e-3, true)
 	var moved: Transform3D = dovelas[2].global_transform * (dovelas[2].get_meta("original_transform") as Transform3D).affine_inverse()
 	_check("the pivot does not move", (moved * h.pivot).distance_to(h.pivot) < 1e-3, true)

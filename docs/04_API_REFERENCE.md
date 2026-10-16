@@ -283,8 +283,9 @@ Supported animation types:
 - `"drop_in"` — lowered onto its place from `drop_height(part)` above (1.5 m + 1.5 × part height, within [2.5, 8] m), fading in over the first `DROP_FADE` (20 %)
 - `"rise_up"` — rise from below
 - `"sink_down"` — descend below ground
-- `"fill_up"` — grow in Y while keeping bottom pinned (with particle effects in live mode)
-- `"build_up"` — the same growth from the base, without the pour (masonry, scaffolding)
+- `"fill_up"` — fills up: drawn below a level rising in world +Y from its lowest point to its
+  highest, with a flat top (`fill_clip.gdshader`); particle effects in live mode
+- `"build_up"` — the same rising level, without the pour (masonry, scaffolding)
 - `"fade_in"` — fade from 0 to the material's own alpha (hidden until it starts)
 - `"fade_out"` — fade from the material's own alpha to 0, then hidden
 
@@ -1277,7 +1278,7 @@ See `10_TERRAIN.md`. All coordinates are 64-bit `float`; nothing at map magnitud
 ### `TerrainGrading` (`RefCounted`, `@tool`)
 - `static compute(data, platforms, to_terrain: Transform3D) -> TerrainGrading` — null when nothing
   changes. `to_terrain` takes parts-container space into the terrain node's.
-- `MAX_PLATFORMS := 16`; fields `used: Array[TerrainPlatform]` (slot order), `rect: Rect2i` (grid
+- `MAX_PLATFORMS := 32`; fields `used: Array[TerrainPlatform]` (slot order), `rect: Rect2i` (grid
   cells kept), `image` (RGBAF: slot-0 change, slot-0 code, slot-1 change, slot-1 code),
   `min_height`, `max_height`, `cut_m3`, `fill_m3`.
 - `change_at(c, r)`, `height_at(e, n)`, `patched_collision() -> PackedFloat32Array`,
@@ -1431,7 +1432,9 @@ The site's plant, placed from the model and driven by the schedule.
     "duration_days": 2,              # Length of the swing (default 1)
     "lag_days": 0,                   # Days between the last member built and the swing
     "angle_deg": 56                  # Optional: start this far from the modelled pose
-                                      #   instead of standing the group upright
+                                      #   instead of standing the group up (back face
+                                      #   vertical, hinged on the back edge of its
+                                      #   lowest part)
   },                                  # ConstructionSchedule.hinge_geometry(parts),
                                       #   get_hinge(part_name); get_part_states() adds
                                       #   "hinge" for these parts, applied with

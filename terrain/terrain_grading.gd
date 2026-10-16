@@ -25,7 +25,7 @@ extends RefCounted
 ## where code = platform slot + 1 (0 = unused), plus 0.5 when the point lies
 ## inside that platform's footprint (drawn fully as bare earth).
 
-const MAX_PLATFORMS := 16
+const MAX_PLATFORMS := 32 # ground.gdshader's grade_progress / grade_bare arrays
 ## A bank point counts as fully bare earth once the ground moved this much.
 const EARTH_FULL_CHANGE := 0.3
 

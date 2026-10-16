@@ -144,8 +144,8 @@ of `scale_up`, `drop_in`, `fade_in` and `fade_out` now **drive those same functi
 
 | Type | Inspector | What it shows | Used for (by inference) |
 |---|---|---|---|
-| `fill_up` | Hormigonar | Grows upward from its base, pinned at the bottom; optional pour stream during Play | concrete, slabs, footings, columns, earth fill, paving |
-| `build_up` | Levantar | **New.** Same growth from the base, no pour | masonry, walls, chimneys, scaffolding, formwork |
+| `fill_up` | Hormigonar | Fills up: a level rising in world +Y from its lowest point, with a flat top; optional pour stream during Play | concrete, slabs, footings, columns, earth fill, paving |
+| `build_up` | Levantar | **New.** The same rising level, no pour | masonry, walls, chimneys, scaffolding, formwork |
 | `drop_in` | Caer | **Reworked.** Lowered onto its place from just above, fading in first | stone pieces, precast, steel and timber framing, ironwork, lighting |
 | `fade_in` | Emerger | **Reworked.** Fades in to the material's *own* opacity | roofing, openings and glazing, finishes, services, rebar |
 | `fade_out` | Desvanecer | **Reworked** the same way; hidden when done | demolition, site clearing |
@@ -160,6 +160,36 @@ of `scale_up`, `drop_in`, `fade_in` and `fade_out` now **drive those same functi
 10 m below — through the slab and foundations it stands on. `build_up` is `fill_up`'s growth
 without the pour (`_grow_from_base()` for Play, `_fill_up_instant()` for scrubbing): a wall rises
 course by course from where it stands.
+
+**The pour as a level, not a stretch (0.7.2).** Both used to scale the element along its *local*
+Y from a 1 % sliver, pinned at its base. On anything not upright -- a tilted arch dovela, a
+dovela of a half-arch built standing up and swung (`rotate`) -- that read as a squashed piece
+being pulled out sideways. Now the element stays whole, in place and at its own size, and is drawn
+only below a level that rises straight up in world space, from its lowest point to its highest as
+it stands at that moment (for a hinged part, measured after the swing). While it is part-filled
+its materials are swapped for `core/fill_clip.gdshader`, which discards what is above the level
+and reproduces the StandardMaterial3D it had (albedo colour and texture, roughness,
+metallic/specular, UV1 triplanar in object or world space with Godot's own mapping, a multiplied
+UV2 detail layer; no normal map for those few days); its own materials come back when the pour is
+done. The cut is closed by the element's inside seen through it -- its back faces below the level,
+lit as a flat horizontal top -- which needs every face wound outward: `MeshPrep.outward()` makes
+the winding consistent across shared edges and turns each connected piece by the sign of its
+volume, once per mesh, the first time it is poured (GDIFC winds IFC meshes front-inside, and mixes
+both within some of them). The pour stream, when on, follows the same world-vertical level.
+
+**Hollow sections pour as their walls.** Big piers, arch ribs and box-girder decks are hollow
+sections, and the IFC models them so (on VTO Río Zadorra: an 8 m² void in a 13.5 m² octagonal
+pier, 21 m² in a 47 m² rectangular arch box, a trapezoidal box deck) -- only the walls are
+concrete. The top of the pour is a flat mesh, `_PourCap`, a child of the part rebuilt at each
+level: `MeshPrep.section_cap()` cuts the mesh with the horizontal plane, chains the cut into loops
+and fills each outer loop minus the loops inside it (a hole is joined to its outline by a cut --
+a keyhole -- so `Geometry2D.triangulate_polygon()` can take it; a Delaunay triangulation filtered
+by inside/outside is the fallback). So a hollow pier rises as a ring of fresh concrete round an
+open core. It is unclipped, slightly darker, casts no shadow, has no owner (never saved) and goes
+when the pour ends or is cut short (`AnimationApplier.end_fill()`, which the editor's Stop Preview
+calls, and which also drops the per-mesh data the pour kept). `MeshPrep.outward(mesh, smooth,
+true)` puts back faces an export left out: each flat opening is filled as the face it was -- for a
+hollow section's missing end, its ring, the void left open.
 
 ### `drop_in`
 
@@ -217,9 +247,17 @@ its springing (*abatimiento*), a tower assembled lying on the deck and lifted up
 - **One rigid body per group.** Every action naming the same `group` (default: its own id)
   swings together, so a half arch can be nine dovela actions, each built in turn, and one swing.
 - **The hinge comes from the model** (`ConstructionSchedule.hinge_geometry()`): the pivot is the
-  middle of the base of the group's lowest part, the axis is horizontal, and the start angle stands
-  the group upright -- the line from the pivot to the group's centre turned vertical. `angle_deg`
-  sets the start angle instead (same axis, same side).
+  middle of the *back edge* of the group's lowest part -- its points furthest back against the way
+  the group leans, i.e. for an arch half the extrados corner of its springing joint, on the side of
+  its pier -- the axis is horizontal, and the start angle stands the group up as far as it goes
+  without any of it passing behind the hinge (its back face vertical). Stood up like that, the
+  group is all in front of its springing, clear of whatever stands behind it. `angle_deg` sets the
+  start angle instead (same axis, same side), e.g. the one on the erection drawing.
+- **Rotate what actually turns.** If the lowest piece is the springing block itself, cast in
+  place, leave it out of the group: the hinge then sits on top of it, at the joint with the first
+  piece that turns. On VTO Río Zadorra dovela 01 sits under the pier's footprint, so a group that
+  includes it swings into the column at any angle; dovelas 02-09 about the 01/02 joint stand 0.5 m
+  in front of it at the drawing's 56°.
 - **Timing**: the parts are built, by their own type, in the start pose; the swing starts when
   the last member has finished (+ `lag_days`), lasts `duration_days` (default 1) and eases in and
   out. Actions that wait for the swing depend on the last member with a lag of the swing's length.
@@ -234,8 +272,9 @@ its springing (*abatimiento*), a tower assembled lying on the deck and lifted up
   between Start Preview and the swing; clash detection sees the swing like any other non-install
   movement, i.e. not at all.
 
-`tests/test_rotate.gd` (24 checks): pivot, axis and angle; the swing's window; the group standing
-upright and rigid before it, with the pivot fixed; eased; landing exactly on the modelled
+`tests/test_rotate.gd` (25 checks): pivot on the back edge, axis, and the angle that stands the
+back face up with nothing behind the hinge; the swing's window; the group standing that way and
+rigid before it, with the pivot fixed; eased; landing exactly on the modelled
 transforms; no pile-up when scrubbing back and forth; a removed `rotate` turning the parts back;
 `reset_rotation()` keeping position and scale; a malformed block ignored.
 

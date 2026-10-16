@@ -110,8 +110,10 @@ clash-checked).
 Elements built in one position and then turned into their final one (an arch half built
 standing up and lowered onto its springing) take a `"rotate"` block in `construction_steps.json`:
 `"rotate": {"group": "ARCH_P13", "duration_days": 2}` on each of their actions. They are built
-standing upright about a hinge at the base of the lowest piece, and swing down together once the
-last one is finished.
+standing up on a hinge at the back edge of the lowest piece (for an arch, the corner on the pier
+side, so the arch stands in front of the pier), and swing down together once the last one is
+finished. `"angle_deg": 56` sets the angle from the drawing. A springing block cast in place is
+not part of the group: the hinge then sits on top of it.
 
 What the name inference picks, roughly: demolition and site clearing fade out; excavation and
 topsoil sink down; concrete, slabs, footings and columns fill up; masonry, walls, chimneys and
@@ -265,9 +267,22 @@ names like the animation types (**Auto types**, section 8): "Excavación" brings
   switch a machine off. Save the scene to keep it. Pressing **Maquinaria** again proposes fresh
   positions (it stops the preview first, asking about unsaved edits).
 - **The mobile crane** is set up beside each lift's pieces, so it has no marker.
-- **Your own crane**: if the scene already has one, no tower crane is added.
+- **Your own crane**: if the scene already has one, no tower crane is added. Drag
+  `tower_crane.tscn` / `crawler_crane.tscn` in (or any scene running `runtime/crane.gd`); give
+  each a distinct name. In the Inspector, **On Site From** / **On Site Until** (an action id or a
+  date) say when it stands there; left empty, it comes a day (**Setup Days**) before the first
+  action whose `crane_id` names it and leaves a day after the last. A crawler crane's boom goes up
+  and down to reach each lift.
+- **Where a crane works from**: give it **Stands** (in the Inspector, a list of markers — add
+  `Marker3D` nodes anywhere in the scene and pick them). It then makes each lift from the stand
+  nearest the piece, or the one the action names in `"crane_stand"`, and drives from one to the
+  next between lifts. Move or turn a marker in the 3D view to put the crane somewhere else: a
+  crane must not stand on a road, under the deck, or anywhere it couldn't be rigged.
 - **The excavator is to scale**: a Caterpillar 320 built to the manufacturer's published
   dimensions, reaching as far and as deep as the real one (`equipment/specs/`).
+- **Pits in the terrain** (a terrain platform with excavation and backfill activities, e.g. a
+  footing's pit) are dug and filled by the excavator and its truck, standing at the top of the
+  pit's banks; pits worked at the same time get one crew each.
 - **No machines**: select the SequenceManager and untick **Auto Equipment** (and delete
   SiteEquipment if you added one).
 - The machines are for show: they are not clash-checked and are not in the schedule.
@@ -287,7 +302,9 @@ Press **F5** (the first time, answer **Select Current** to make your scene the m
   bottom-up, so a clash that remains usually means the activity is scheduled after what is above
   it (e.g. window surrounds still going in after the cornice above them).
 - **Camera**: click in the view to fly. **W A S D** move, the mouse looks, **Q / E** go down / up,
-  **Shift** is faster, **Esc** releases the mouse so you can use the bar again.
+  **Shift** is faster, **Esc** releases the mouse so you can use the bar again. A translucent panel
+  in the bottom-left corner shows all of this while you play -- each key lights up as you press it
+  -- and **H** hides it (SequenceManager > Show Controls Hint turns it off; recordings never show it).
 
 ## 12. Record a video
 
