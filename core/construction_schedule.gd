@@ -253,7 +253,9 @@ func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_groupe
 						"slide_dur": timing.duration_sec * 0.4,
 						"crane_id": assignment.crane_id,
 						"stand": String(stand.name) if stand else "",
-						"action_id": action_id
+						"action_id": action_id,
+						"end_day": part_end_day,
+						"parts": group_parts
 					})
 				elif anim_type == "fill_up":
 					_fill_up_units.append({
@@ -314,6 +316,10 @@ func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_groupe
 				# always falls back to the plain (15,0,0) offset.
 				var world_pos: Vector3 = _resolve_commander_world_pos(building_parts[part_name])
 				_cache_ground_start(part_name, world_pos, null, building_parts)
+				if anim_type == "install":
+					_lone_lifts.append({"tracked_part_name": part_name, "parts": [part_name],
+						"pickup_pos": world_pos + Vector3(15.0, 0, 0), "target_pos": world_pos,
+						"crane_id": "", "start_day": part_start_day, "end_day": part_end_day})
 
 				if anim_type == "fill_up":
 					_fill_up_units.append({
@@ -351,7 +357,94 @@ func _init(sequence_data: Dictionary, building_parts: Dictionary, spatial_groupe
 	# a trimesh per mesh part, from scratch) is most of what a rebuild costs.
 	# Skipping it is what lets the dock rebuild after every edit.
 	if has_install_parts():
+		if plan_lifts_enabled:
+			_plan_lifts(building_parts, cranes)
 		_collision_query.setup(building_parts)
+
+## Install lifts: for each unit, whether the default lift (up 5 m, across,
+## down) is free of what stands by then, and if not the path that is --
+## LiftPlanner. A planned path is stored on every part of the unit as the
+## `install_path` meta (local positions, first = `install_ground_start`), which
+## AnimationApplier follows instead of the default; a free default leaves the
+## meta off, so the lift is exactly what it always was. Commander name ->
+## {ok, direct, mode, length}; `ok` false is a lift no path exists for (it
+## keeps the default and the clash scan reports it).
+var lift_plans: Dictionary = {}
+# Install parts of a plain target_prefix action: lifted without a crane (no
+# _install_units entry), from beside their place, but planned all the same.
+var _lone_lifts: Array = []
+## Off: every lift keeps the default path, whatever stands in its way (to see
+## what the clash scan makes of it).
+static var plan_lifts_enabled := true
+
+func _plan_lifts(building_parts: Dictionary, cranes: Dictionary) -> void:
+	var boxes := {}
+	for n in building_parts:
+		var node: Node3D = building_parts[n]
+		if node.has_meta(FormworkBuilder.META_OWNER):
+			continue
+		var b := LiftPlanner.rest_box(node)
+		if b.size != Vector3.ZERO:
+			boxes[n] = b
+	var blocked: Array = []
+	for unit in _install_units + _lone_lifts:
+		var in_unit := {}
+		var mover := AABB()
+		var any := false
+		for n in unit.parts:
+			in_unit[n] = true
+			if boxes.has(n):
+				mover = boxes[n] if not any else mover.merge(boxes[n])
+				any = true
+		if not any:
+			continue
+		var d0: Vector3 = unit.pickup_pos - unit.target_pos
+		# What the piece has to clear: everything that has started by the time it
+		# is placed, except what lies at or under the laydown's ground level.
+		var floor_y := mover.position.y + d0.y + 0.5
+		var obstacles: Array = []
+		for n in boxes:
+			if in_unit.has(n):
+				continue
+			var w = _part_schedules.get(n)
+			if w != null and w.start_day > unit.end_day:
+				continue
+			if w != null and w.anim_type in ["fade_out", "sink_down"] and w.end_day <= unit.start_day:
+				continue # removed before the lift (cleared trees, a stripped scaffold)
+			if boxes[n].end.y > floor_y:
+				obstacles.append(boxes[n])
+		var limits := {}
+		var crane: Crane = cranes.get(unit.crane_id)
+		if crane and crane.is_inside_tree():
+			var mast: Vector3 = crane.global_position - unit.target_pos
+			limits["mast_d"] = mast
+			limits["r_max"] = maxf(Vector2(d0.x - mast.x, d0.z - mast.z).length(), Vector2(mast.x, mast.z).length()) + 1.5
+			var arm := crane.find_child("Arm", true, false) as Node3D
+			if arm and not crane.find_child("Boom", true, false):
+				# A tower crane: the piece goes under the jib, not through it, and
+				# not in against the mast.
+				limits["y_max"] = arm.global_position.y - 2.5 - mover.end.y
+				limits["r_min"] = 3.0
+		var plan := LiftPlanner.find(d0, mover, obstacles, limits)
+		lift_plans[unit.tracked_part_name] = {"ok": plan.ok, "direct": plan.direct, "mode": plan.mode, "length": plan.length}
+		if not plan.ok:
+			blocked.append(unit.tracked_part_name)
+		for n in unit.parts:
+			var part: Node3D = building_parts.get(n)
+			if not part or not part.has_meta("original_pos"):
+				continue
+			if plan.direct or not plan.ok:
+				if part.has_meta("install_path"):
+					part.remove_meta("install_path")
+				continue
+			var parent := part.get_parent() as Node3D
+			var basis_inv := parent.global_transform.basis.inverse() if parent else Basis.IDENTITY
+			var local := PackedVector3Array()
+			for o in plan.offsets:
+				local.append(part.get_meta("original_pos") + basis_inv * o)
+			part.set_meta("install_path", local)
+	if not blocked.is_empty():
+		push_warning("ConstructionSchedule: %d lift(s) have no clear path (boxes only: a roof or a deck counts as solid over its whole footprint) and keep the default, e.g. '%s'." % [blocked.size(), blocked[0]])
 
 ## Resolves an action's identity: an explicit id if present, else its
 ## commander_prefix, else its target_prefix, else "". static (uses no

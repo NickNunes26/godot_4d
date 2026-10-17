@@ -1335,7 +1335,9 @@ printed, with source URL, configuration and retrieval date). `EXCAVATOR := "exca
 ### `SiteEquipment` (`Node3D`, `@tool`)
 The site's plant, placed from the model and driven by the schedule.
 - Exported: `tower_crane`, `mobile_crane`, `excavator_and_truck` (bools, default on),
-  `tower_height`, `jib_length` (0 = automatic), `erect_days` (4).
+  `tower_height`, `jib_length` (0 = automatic), `erect_days` (4); `hold_days` (30: the mobile
+  crane stays on site, parked, between jobs this close, and leaves otherwise), `show_routes`
+  (draw its drives, orange, on the ground).
 - Children: saved markers `TowerCraneSite` / `ExcavatorSite` (their transform is where the machine
   stands) and the generated models (meta `_equipment_generated`, never saved).
 - `GROUP := "site_equipment"`.
@@ -1351,14 +1353,55 @@ The site's plant, placed from the model and driven by the schedule.
   `TimelineController.scrub_to()`), `follow_schedule(schedule, day, building_parts)`;
   `static reset_all(tree)` (the dock's Stop Preview), `stop_following()`.
 - `make_plan(schedule, building_parts) -> Dictionary` — `{tower: {on, off, parts: [{name, start,
-  end, kind}]}, mobile: [{start, finish, pos, yaw, parts, aim}], digs: [{start, finish, fill}]}`.
+  end, kind}]}, mobile: [{start, finish, pos, yaw, parts, aim}], mobile_segments: [{id, kind:
+  stand|park|drive, t0, t1, ...}], drives: [{t0, t1, points, length, ok, direct, margin, days}],
+  digs: [{start, finish, fill}]}`. Jobs the crane can serve from one spot are merged into one entry
+  of `mobile`.
 - Static helpers: `site_context(sequence_manager)` (`{boxes, actions, work_box, dig_box, ground}`),
   `actions_of(sequence_data, part_names)`, `rest_box(part) -> AABB` (finished placement, world),
   `robust_box(boxes) -> AABB`, `tower_size(ctx, at, height := 0, jib := 0)`,
   `ground_at(tree, p, fallback)`, `aim_mobile(crane_tf, target) -> {slew, luff, extend}`,
+  `boom_needed(crane_tf, target) -> float` (boom length for a lift; over `BOOM_MAX` = out of reach),
   `dig_pose(u) -> {slew, boom, stick, bucket, loaded}`.
 - Constants: `STRUCTURE`, `ROOF`, `DIG`, `FILL`, `LIGHT_LIFTS` (TaskClassifier categories),
-  `TOWER_GRACE_DAYS` (7), `DIG_CYCLE` (11 s), `TRUCK_ROUND` (6 cycles), `TRUCK_SPOT`, `TRUCK_RUN`.
+  `TOWER_GRACE_DAYS` (7), `DIG_CYCLE` (11 s), `TRUCK_ROUND` (6 cycles), `TRUCK_SPOT`, `TRUCK_RUN`,
+  `ACCESS_RUN` (40 m), `DRIVE_MPD` (150 m/day), `DRIVE_DAYS` (0.15--0.6), `MAST_CLEAR` (3 m).
+
+- Boom clearance: `_mobile_job_for()` also returns `tip_up` (m the boom tip is held above its usual
+  6 m over the piece) and `boom_ok`; `boom_needed(crane_tf, target)`, `BOOM_CLEAR`, `BOOM_RAISE`,
+  `REMOVES` (animations after which a part is gone). Standing entries carry `from`, `begin`, `gone`.
+
+### `RoutePlanner` (`RefCounted`, static)
+The ground route of a vehicle round rectangular obstacles, plan view (x, z); used for the mobile
+crane's drives.
+- `find(start, goal, obstacles, length, width) -> {ok, direct, points, length, margin}` --
+  `obstacles` is an Array of `Rect2` (x, z footprints). The straight line when the vehicle's body
+  clears it (`direct`), else the shortest route round the obstacles' corners (visibility graph +
+  A\*) that the body itself clears, trying more room beside it until one does (`margin`, metres).
+  `ok = false`: no route exists and `points` is the straight line.
+- `sample(points, dist, start_heading := NAN, end_heading := NAN, blend := 4.0) -> {pos, heading}` --
+  position and heading along a route, the heading turning over `blend` metres round corners and
+  easing into the headings the vehicle has before and after.
+- `flood(start, obstacles, area, cell := 2.0, inflate := 2.5) -> Dictionary` and
+  `reached(flooded, p) -> bool` -- which ground can be reached from `start`, for many places at once.
+- `path_length(points)`. Constants `MARGINS`, `SEARCH`, `BODY_MARGIN`.
+
+### `LiftPlanner` (`RefCounted`, static)
+The path of an `install` lift round what is built (`13_SITE_EQUIPMENT.md`, "Lifts that clear what is
+built"). Paths are offsets from the piece's place, in world axes; the last point is `(0, 0, 0)`.
+- `find(d0, box, obstacles, limits := {}) -> {ok, direct, offsets, length, mode}` -- `d0` the pickup as
+  an offset, `box` the piece's world box at its place, `obstacles` an Array of world AABBs;
+  `limits`: `mast_d`, `r_min`, `r_max`, `y_max`. `direct`: the default lift (up 5 m, across, down)
+  was free; `mode`: `default`, `raised`, `side` or `blocked` (`ok = false`).
+- `sample(points, progress) -> Vector3` -- the position along a path, eased over its length.
+- `rest_box(part) -> AABB`, `segment_hits(a, b, box) -> bool`, `path_length(points)`. Constants
+  `MARGIN`, `HOVER`, `SIDES`, `REACH_STEPS`, `REGION`.
+
+### `ConstructionSchedule` additions
+- `lift_plans: Dictionary` -- commander name → `{ok, direct, mode, length}` for every install lift.
+- `static plan_lifts_enabled := true` -- off: every lift keeps the default path.
+- Part meta `install_path` (PackedVector3Array, local positions) on the parts of a lift whose path was
+  changed; absent = the default path.
 
 ---
 

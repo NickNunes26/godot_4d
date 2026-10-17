@@ -89,6 +89,8 @@ func _run() -> void:
 	_test_dig_cycle()
 	_test_mobile_aim()
 	_test_site()
+	_test_mobile_routes()
+	_test_mobile_boom()
 	_test_other_crane_and_opt_out()
 	print("\n%s (%d failure(s))" % ["ALL PASSED" if _fails == 0 else "FAILURES", _fails])
 	quit(1 if _fails > 0 else 0)
@@ -280,6 +282,27 @@ func _test_site() -> void:
 	ctl.scrub_to(94.0)
 	_check("granary: mobile crane back", eq._mobile.visible, true)
 
+	print("=== the mobile crane drives in and out")
+	var drives: Array = plan.drives
+	_check("in and out for each of the two jobs (they are %.0f days apart)" % (plan.mobile[1].start - plan.mobile[0].finish), drives.size(), 4)
+	var d_in: Dictionary = drives[0]
+	var cross: Dictionary = plan.mobile[0]
+	_check("the cross: a free road from outside", [d_in.ok, d_in.direct], [true, true])
+	_check("...ending at its spot", d_in.points[d_in.points.size() - 1].is_equal_approx(Vector2(cross.pos.x, cross.pos.z)), true)
+	ctl.scrub_to(d_in.t0 - 0.05)
+	_check("before the drive: not on site", eq._mobile.visible, false)
+	ctl.scrub_to((d_in.t0 + d_in.t1) * 0.5)
+	var mid: Vector2 = Vector2(eq._mobile.global_position.x, eq._mobile.global_position.z)
+	_check("mid-drive: on the road, short of its spot", [eq._mobile.visible, mid.distance_to(Vector2(cross.pos.x, cross.pos.z)) > 5.0], [true, true])
+	var fwd := -eq._mobile.global_transform.basis.z
+	var along: Vector2 = (d_in.points[d_in.points.size() - 1] - d_in.points[0]).normalized()
+	_check("...pointing along it", absf(Vector2(fwd.x, fwd.z).dot(along)) > 0.95, true)
+	_check("...boom stowed, outriggers in", eq._mobile_pose.out, 0.0)
+	var d_out: Dictionary = drives[1]
+	ctl.scrub_to(d_out.t1 + 0.01)
+	_check("after the drive out: gone", eq._mobile.visible, false)
+	_check("the granary: the boundary wall is not built yet, so the road in is open", [drives[2].ok, drives[2].direct], [true, true])
+
 	print("=== truck round")
 	eq._dig = plan.digs[0]
 	eq._anim_time = 0.0
@@ -296,6 +319,130 @@ func _test_site() -> void:
 	_check("reset: the finished site", [tower.visible, (tower.get_node("Arm") as Node3D).visible, eq._excavator.visible], [true, true, true])
 	s.main.free()
 	current_scene = null
+
+## The mobile crane's life between jobs, on made-up jobs: does it need to move,
+## and if so, how.
+func _test_mobile_routes() -> void:
+	print("=== mobile crane: move only when needed, round what is built")
+	var s := _scene()
+	var sm: Node3D = s.sm
+	sm.initialize_parts()
+	var eq := SiteEquipment.ensure(sm, true)
+	eq._ground_level = 0.0
+	eq.hold_days = 30.0
+	var house := AABB(Vector3(-10, 0, -5), Vector3(20, 9, 10))
+	var standing := [{"box": house, "from": -INF, "begin": -INF}]
+	var mast := Vector2(1000, 1000)
+	var work := Vector2.ZERO
+	var west := _job(-30.0, 0.0, 10.0, 12.0, Vector3(-36, 0, 0))
+	var near_west := _job(-30.0, 0.0, 20.0, 22.0, Vector3(-40, 0, 3)) # 10 m from the same spot
+	var east := _job(30.0, 0.0, 20.0, 22.0, Vector3(36, 0, 0))
+	var late_east := _job(30.0, 0.0, 200.0, 202.0, Vector3(36, 0, 0))
+
+	var plan: Dictionary = eq._plan_mobile([west, near_west], standing, work, {}, mast)
+	_check("a second lift within reach: one spot, no drive between", plan.stands.size(), 1)
+	_check("...which serves both pieces for the whole time", [plan.stands[0].parts.size(), plan.stands[0].start, plan.stands[0].finish], [2, 10.0, 22.0])
+	_check("...so only the way in and the way out", plan.drives.size(), 2)
+
+	plan = eq._plan_mobile([west, east], standing, work, {}, mast)
+	_check("a lift out of reach: a second spot", plan.stands.size(), 2)
+	var kinds: Array = plan.segments.map(func(g): return g.kind)
+	_check("in, work, wait, drive, work, out", kinds, ["drive", "stand", "park", "drive", "stand", "drive"])
+	var between: Dictionary = plan.segments[3]
+	_check("the house is in the way: not the straight line", [between.ok, between.direct], [true, false])
+	_check("...a way round: %.0f m for 60 m as the crow flies" % between.length, between.length > 62.0 and between.length < 90.0, true)
+	var rects := [Rect2(house.position.x, house.position.z, house.size.x, house.size.z)]
+	_check("...that the carrier itself clears", RoutePlanner._clear(between.points, rects, EquipmentModels.MOBILE_LENGTH, EquipmentModels.MOBILE_WIDTH * 0.5), true)
+	_check("...driven between its two jobs", [between.t0 >= west.finish + 0.75, between.t1 == east.start - 0.75], [true, true])
+	var tiles := true
+	for i in range(1, plan.segments.size()):
+		tiles = tiles and plan.segments[i].t0 >= plan.segments[i - 1].t1 - 0.001
+	_check("segments follow one another without overlap", tiles, true)
+
+	plan = eq._plan_mobile([west, late_east], standing, work, {}, mast)
+	kinds = plan.segments.map(func(g): return g.kind)
+	_check("jobs months apart: it leaves and comes back", kinds, ["drive", "stand", "drive", "drive", "stand", "drive"])
+
+	var tower := {"on": 0.0, "off": 100.0}
+	var mast_at := Vector2(0, 12) # the tower crane stands on the straight line round the house
+	var east2 := _job(30.0, 12.0, 20.0, 22.0, Vector3(36, 0, 12))
+	var west2 := _job(-30.0, 12.0, 10.0, 12.0, Vector3(-36, 0, 12))
+	var open: Dictionary = eq._plan_mobile([west2, east2], [], work, {}, mast_at)
+	var blocked: Dictionary = eq._plan_mobile([west2, east2], [], work, tower, mast_at)
+	_check("nothing built: straight on", open.segments[3].direct, true)
+	_check("a tower crane's mast in the way: round it", [blocked.segments[3].ok, blocked.segments[3].direct], [true, false])
+	s.main.free()
+	current_scene = null
+
+func _job(x: float, z: float, start: float, finish: float, piece: Vector3) -> Dictionary:
+	var box := AABB(piece - Vector3(1, 0, 1), Vector3(2, 2, 2))
+	return {"start": start, "finish": finish, "pos": Vector3(x, 0, z), "yaw": 0.0,
+		"parts": [{"name": "P%d" % int(start), "start": start, "end": finish, "kind": "drop_in", "box": box}],
+		"aim": Vector3(piece.x, 2, piece.z)}
+
+
+## The boom clears what is built: another spot if there is one, else a higher tip.
+func _test_mobile_boom() -> void:
+	print("=== mobile crane: the boom clears what is built")
+	var s := _scene()
+	var sm: Node3D = s.sm
+	sm.initialize_parts()
+	var eq := SiteEquipment.ensure(sm, true)
+	eq._ground_level = 0.0
+	var work := Vector2.ZERO
+	var piece := Vector3(30, 0, 0)
+	var entry := {"name": "P", "start": 10.0, "end": 12.0, "kind": "drop_in", "box": AABB(piece - Vector3(1, 0, 1), Vector3(2, 2, 2))}
+
+	var job: Dictionary = eq._mobile_job_for([entry], work, [])
+	_check("open site: the boom clears at its usual height", [job.boom_ok, job.tip_up], [true, 0.0])
+	var usual: Vector3 = job.pos
+
+	# A 12 m wall right behind the usual spot, across the boom's line.
+	var wall := AABB(Vector3(33, 0, -10), Vector3(1, 12, 20))
+	var standing := [{"box": wall, "from": -INF, "begin": -INF}]
+	job = eq._mobile_job_for([entry], work, standing)
+	_check("a wall across the boom: it stands elsewhere, boom still at its usual height", [job.boom_ok, job.tip_up, job.pos.is_equal_approx(usual)], [true, 0.0, false])
+	var tf := Transform3D(Basis(Vector3.UP, job.yaw), job.pos)
+	_check("...and the boom really clears (checked again from there)", eq._boom_lift(tf, [entry], eq._boom_obstacles(standing, entry.box, 12.0)), 0.0)
+	var straight := eq._boom_lift(Transform3D(Basis(Vector3.UP, 0.0), usual), [entry], eq._boom_obstacles(standing, entry.box, 12.0))
+	_check("...which it did not from the usual one (%s)" % str(straight), straight > 0.0, true)
+
+	# The same wall, but cleared away (fade_out) before the lift: not in the way.
+	var cleared := [{"box": wall, "from": -INF, "begin": 0.0, "gone": 5.0}]
+	job = eq._mobile_job_for([entry], work, cleared)
+	_check("a wall taken down before the lift is not there: the usual spot", [job.pos.is_equal_approx(usual), job.tip_up], [true, 0.0])
+	cleared[0]["gone"] = 11.0
+	job = eq._mobile_job_for([entry], work, cleared)
+	_check("...but still up when the piece goes in: it is", job.pos.is_equal_approx(usual), false)
+
+	# The piece in a well: four 14 m walls 3 m round it. Every spot has the boom
+	# over a wall, so the tip goes higher instead.
+	var well: Array = []
+	for b in [AABB(Vector3(26, 0, -4), Vector3(1, 14, 8)), AABB(Vector3(33, 0, -4), Vector3(1, 14, 8)),
+			AABB(Vector3(26, 0, -4), Vector3(8, 14, 1)), AABB(Vector3(26, 0, 3), Vector3(8, 14, 1))]:
+		well.append({"box": b, "from": -INF, "begin": -INF})
+	job = eq._mobile_job_for([entry], work, well)
+	_check("a well: the boom is held higher (%.0f m)" % job.tip_up, [job.boom_ok, job.tip_up > 0.0], [true, true])
+	tf = Transform3D(Basis(Vector3.UP, job.yaw), job.pos)
+	_check("...and clears (checked again)", eq._boom_lift(tf, [entry], eq._boom_obstacles(well, entry.box, 12.0)) <= job.tip_up, true)
+	var tall: Array = well.duplicate()
+	for b in well:
+		var raised: AABB = (b.box as AABB)
+		tall.append({"box": AABB(raised.position, Vector3(raised.size.x, 80.0, raised.size.z)), "from": -INF, "begin": -INF})
+	job = eq._mobile_job_for([entry], work, tall)
+	_check("walls no boom can clear: reported, the crane still stands somewhere", [job.boom_ok, job.pos != Vector3.ZERO], [false, true])
+
+	# A piece only reachable over a wall too high to clear: not the same stand.
+	var west := _job(-30.0, 0.0, 10.0, 12.0, Vector3(-36, 0, 0))
+	var behind := _job(-30.0, 0.0, 20.0, 22.0, Vector3(-40, 0, 3))
+	var high := [{"box": AABB(Vector3(-37, 0, -20), Vector3(1, 60, 40)), "from": -INF, "begin": -INF}]
+	var plan: Dictionary = eq._plan_mobile([west, behind], [{"box": high[0].box, "from": -INF, "begin": 12.0}], work, {}, Vector2(1000, 1000))
+	_check("within reach but behind a 60 m wall: not one stand", plan.stands.size(), 2)
+	plan = eq._plan_mobile([west, behind], [], work, {}, Vector2(1000, 1000))
+	_check("without the wall: one stand", plan.stands.size(), 1)
+	s.main.free()
+	current_scene = null
+
 
 func _test_other_crane_and_opt_out() -> void:
 	print("=== a scene's own crane, and opting out")

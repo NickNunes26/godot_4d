@@ -3,6 +3,33 @@
 Notable changes per release. The design reasoning behind each subsystem lives in the numbered
 docs in this folder; `README.md` is the as-built reference.
 
+## Unreleased
+
+**The mobile crane drives round what is built.** Between two jobs it first asks whether it has to
+move at all -- the next piece may be within its boom from where it stands -- and if it does, it
+drives there by the straight line when that is clear, and otherwise by the shortest route round
+the parts standing that day and the tower crane's mast (visibility graph + A\*, checked with the
+carrier's 11.6 x 2.55 m body swept along each leg and swung at each corner). It drives in from and
+out to the road instead of appearing and vanishing, waits parked between close jobs, and leaves
+the site between jobs more than `hold_days` (30) apart. `SiteEquipment.show_routes` draws the
+drives. `equipment/route_planner.gd` (`RoutePlanner`); `tests/test_route_planner.gd` (22 checks),
+`tests/test_equipment.gd`.
+
+**The boom and `install` lifts clear what is built.** The same rule, plan a way that clears rather
+than report the clash. *Boom:* the mobile crane's spot is chosen so that its boom and hook line
+clear every part standing when each piece goes in -- another spot first, then the tip held higher
+(`tip_up`), and a spot it can drive to is preferred to one it cannot. *`install`:* where the usual
+lift (up 5 m, across, down) would pass through something, the piece is taken over it, round it, or
+in sideways at the level of its place, whichever is the shortest that clears (a tower crane's jib
+height, reach and mast bound it); a free default is left exactly as it was. `core/lift_planner.gd`
+(`LiftPlanner`), `ConstructionSchedule.lift_plans`; `tests/test_lift_planner.gd` (23 checks),
+`tests/test_collisions.gd` (21), `tests/test_equipment.gd` (125), `tests/test_route_planner.gd` (27).
+Also: a part the schedule removes (`fade_out`, `sink_down`) no longer counts as standing after
+it goes -- the cleared trees were blocking the mobile crane's spots on the test project.
+
+**Sample project in the repo.** `examples/galicia/`: the Galician pazo (house and scaffold IFCs),
+its MS Project XML and its `construction_steps.json`.
+
 ## 0.7.2
 
 **Controls on screen.** Play shows a translucent panel in the bottom-left corner with what the keys

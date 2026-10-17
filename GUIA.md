@@ -280,6 +280,11 @@ de animación (**Auto types**, apartado 8): "Excavación" trae la excavadora, "H
   conservarlo. Si vuelves a pulsar **Maquinaria**, propone posiciones nuevas (antes detiene la
   vista previa, preguntando por los cambios sin guardar).
 - **La grúa autopropulsada** se coloca en cada izado junto a las piezas, así que no tiene marcador.
+  Entra por el camino y, entre dos trabajos, o se queda donde está (si la siguiente pieza sigue al
+  alcance de su pluma: no hace falta moverla) o va al siguiente punto por la **ruta más corta
+  alrededor de lo ya construido ese día** (y de la torre de la grúa torre). Si los trabajos distan
+  más de **Hold Days** (30), se va de la obra y vuelve. Marca **Show Routes** en **SiteEquipment**
+  para ver sus recorridos dibujados en naranja sobre el suelo.
 - **Si la escena ya tiene una grúa tuya**, no se añade la grúa torre. Arrastra `tower_crane.tscn` /
   `crawler_crane.tscn` (o cualquier escena con `runtime/crane.gd`), cada una con su nombre. En el
   Inspector, **On Site From** / **On Site Until** (un id de actividad o una fecha) dicen cuándo está
@@ -311,7 +316,9 @@ o **F6** para la escena abierta.
 - **Los choques** (solo con izados de grúa, `install`) se buscan solos al empezar: las fechas con
   alguno se marcan en rojo en el deslizador (pasa el ratón para ver la pareja), el panel Output los
   lista y la reproducción se detiene en cada uno. Una pieza izada choca cuando atraviesa algo ya
-  construido en su camino. Tocar o solaparse con aquello sobre lo que
+  construido en su camino -- pero la grúa **antes lo planea sin chocar**: si el izado habitual (sube
+  5 m, cruza, baja) atravesaría algo, la pieza pasa por encima, rodea o entra de lado, lo más corto
+  que libre (solo se avisa de choque si no hay camino). Tocar o solaparse con aquello sobre lo que
   apoya *en el modelo terminado* no es un choque, ni rozar a menos de 2 cm. Las piezas de una
   actividad se colocan de abajo arriba, así que un choque que queda suele indicar que la actividad
   está planificada después de lo que tiene encima (p. ej. recercados que siguen colocándose cuando

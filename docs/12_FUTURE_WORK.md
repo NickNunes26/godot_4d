@@ -126,15 +126,18 @@ laydown area rather than appearing above their place.
 
 - **Formwork step 6** — the generator rule with carry-forward (`07_FORMWORK.md`). Folded into
   item 1, but worth doing first on its own: until then, Generate 4D Schedule destroys formwork.
-- **Crane geometry isn't collision-checked** — a jib sweeping through a finished element is
-  invisible to the clash system. Open since Phase 2; more relevant now that every project has a
-  tower crane (item 2). Equipment clashes generally: the excavator's manufacturer envelope (working
-  ranges, tail swing, transport size) is already on file (`equipment/specs/`, `EquipmentSpecs`);
-  the cranes need the same.
-- **The `install` path is fixed**: up 5 m, across, straight down. Since item 2 it starts at the
-  tower crane's laydown area (its `PickupZone`) instead of 15 m to the side, but the path itself
-  doesn't come from the crane, and a vertical final approach through whatever is above is reported
-  as a clash (correctly, for that path).
+- **Crane geometry: mostly built, by planning rather than reporting.** The approach is to **plan a
+  path that clears instead of reporting a clash**, and it now covers the mobile crane's drives
+  (shortest route round what is built, no move at all when the next piece is in reach), its boom
+  (another spot, or the tip held higher, so the boom and hook line clear what stands) and the
+  `install` lift (over, round or in from the side; `13_SITE_EQUIPMENT.md`, "Driving between
+  jobs" and "Lifts that clear what is built"). **Still open:** the tower crane's jib and
+  counter-jib are clear by construction (10 m over the tallest part in reach) but not checked;
+  the `drop_in` fall is straight down from above and the tower crane follows it without
+  checking what is over the place; obstacles are boxes, so a pitched roof counts as solid over
+  its footprint and some lifts under or beside one find no path (a refinement: voxelise large
+  parts); the boom is a line, not the superstructure and counterweight; the excavator's
+  envelope (`equipment/specs/`, `EquipmentSpecs`) is on file but not used for clashes.
 - **`rise_up` and `sink_down` move 10 m.** Inference no longer uses `rise_up`. Excavation still
   uses `sink_down`, which pushes the soil down through the ground; a "dug away" animation (the
   reverse of `build_up`, top first) would read better.

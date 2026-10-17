@@ -115,7 +115,8 @@ func _run() -> void:
 	_check("lowered alongside the segment it abuts: no clash", _clashes(neighbour, every_phase), [])
 	_teardown(neighbour)
 
-	print("=== something in the way still is")
+	print("=== something in the way still is, on the default path")
+	ConstructionSchedule.plan_lifts_enabled = false
 	var blocked := _site(Vector3.ZERO, 0.0, true)
 	await physics_frame
 	_check("the post in the slide path clashes", _clashes(blocked, [4.0, 4.1, 4.2]), ["BEAM|POST"])
@@ -127,6 +128,17 @@ func _run() -> void:
 		_check("full scan: inside the slide phase", windows[0].start_day > 3.6 and windows[0].end_day < 4.4, true)
 	_check("install windows are what gets scanned", blocked.schedule.get_install_windows(), [[3.0, 5.0]])
 	_teardown(blocked)
+	ConstructionSchedule.plan_lifts_enabled = true
+
+	print("=== ...and is cleared by a planned path (round the post, 10 m tall, at the hover height)")
+	var planned := _site(Vector3.ZERO, 0.0, true)
+	await physics_frame
+	_check("the beam is taken over the post: no clash in any phase", _clashes(planned, every_phase.duplicate() + [4.1, 4.2, 4.35, 3.8, 4.6]), [])
+	_check("the plan says so, and not the default", [planned.schedule.lift_plans["BEAM"].ok, planned.schedule.lift_plans["BEAM"].direct], [true, false])
+	_check("full scan finds nothing", planned.tc.scan_collisions(0.02).size(), 0)
+	planned.tc.scrub_to(5.0, false)
+	_check("the lift ends where the model puts the beam", (planned.parts["BEAM"] as Node3D).position.is_equal_approx(planned.parts["BEAM"].get_meta("original_pos")), true)
+	_teardown(planned)
 
 	print("=== a part that has not grown yet is not full size")
 	var ghost_site := _site(Vector3.ZERO, 0.0, false)

@@ -266,7 +266,12 @@ names like the animation types (**Auto types**, section 8): "Excavación" brings
   change **Tower Height** (ground to the jib) and **Jib Length** (0 = automatic), **Erect Days**, or
   switch a machine off. Save the scene to keep it. Pressing **Maquinaria** again proposes fresh
   positions (it stops the preview first, asking about unsaved edits).
-- **The mobile crane** is set up beside each lift's pieces, so it has no marker.
+- **The mobile crane** is set up beside each lift's pieces, so it has no marker. It drives in from
+  the road, and between two jobs it either stays where it is (when the next piece is still within
+  its boom -- no need to move) or drives to the next spot by the **shortest route round what is
+  built that day** (and round the tower crane's mast). Jobs more than **Hold Days** apart (30)
+  mean it leaves the site and comes back. Tick **Show Routes** on **SiteEquipment** to see its
+  drives drawn in orange on the ground.
 - **Your own crane**: if the scene already has one, no tower crane is added. Drag
   `tower_crane.tscn` / `crawler_crane.tscn` in (or any scene running `runtime/crane.gd`); give
   each a distinct name. In the Inspector, **On Site From** / **On Site Until** (an action id or a
@@ -297,7 +302,10 @@ Press **F5** (the first time, answer **Select Current** to make your scene the m
 - **Clashes** (only for crane lifts, `install`) are looked for by themselves when Play starts: the
   dates with one turn red on the slider (hover for the pair), the Output panel lists them, and Play
   stops at each. A lifted piece clashes when it passes through something already built on its way
-  in. Touching or overlapping what it sits on or against *in the finished
+  in -- but the crane **plans round it first**: when the usual lift (up 5 m, across, down) would go
+  through something, the piece is taken over it, round it, or in from the side, whichever is the
+  shortest that clears (a clash is then reported only when there is no way in). Touching or
+  overlapping what it sits on or against *in the finished
   model* is not a clash, and neither is grazing within 2 cm. Pieces of one activity are placed
   bottom-up, so a clash that remains usually means the activity is scheduled after what is above
   it (e.g. window surrounds still going in after the cornice above them).

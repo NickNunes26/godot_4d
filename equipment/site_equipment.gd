@@ -21,6 +21,9 @@ extends Node3D
 ##   piece it can reach while it is lowered into place.
 ## - **Mobile crane**: set up beside each lift the tower crane can't make -- a
 ##   piece out of its reach, or after it has gone -- and driven away after.
+##   Between two jobs close in time it stays where it is when it can still
+##   reach the next piece, and otherwise drives there by the shortest route
+##   round what is built (RoutePlanner).
 ## - **Excavator and truck**: at the dig during excavation and earth-fill
 ##   activities; dig -> slew -> dump into the truck, which leaves full and
 ##   comes back empty (for fill: arrives full and tips).
@@ -51,12 +54,28 @@ const DIG_CYCLE := 11.0
 const TRUCK_ROUND := 6 # dig cycles per truck round: arrive, 4 loads, leave
 const TRUCK_SPOT := Vector3(7.4, 0, 1.0) # truck origin, excavator space
 const TRUCK_RUN := 40.0 # metres from the loading spot to where it leaves view
+const ACCESS_RUN := 40.0 # metres out from a mobile crane's spot to where it leaves the site
+const DRIVE_MPD := 150.0 # metres a mobile crane drives per day of schedule
+const DRIVE_DAYS := Vector2(0.15, 0.6) # shortest and longest drive, in days
+const REMOVES := ["fade_out", "sink_down"] # animations after which a part is gone
+const MAST_CLEAR := 3.0 # metres round the tower crane's mast a vehicle keeps clear
+const BOOM_CLEAR := 0.8 # metres either side of the boom's axis kept clear (half its width + room)
+const BOOM_RAISE := [0.0, 3.0, 6.0, 10.0, 15.0, 22.0] # metres higher than usual the boom tip may go to clear something
 
 @export var tower_crane: bool = true:
 	set(v):
 		tower_crane = v
 		_rebuild_preview()
 @export var mobile_crane: bool = true
+## The mobile crane stays on site, parked, between two jobs this many days
+## apart or fewer (and drives from one to the next); further apart, it leaves
+## by the road it came and comes back for the next.
+@export_range(0.0, 365.0, 1.0, "or_greater") var hold_days: float = 30.0
+## Draw the mobile crane's drives on the ground (orange lines).
+@export var show_routes: bool = false:
+	set(v):
+		show_routes = v
+		_draw_routes()
 @export var excavator_and_truck: bool = true:
 	set(v):
 		excavator_and_truck = v
@@ -98,6 +117,8 @@ var _anim_time := 0.0
 var _dig: Dictionary = {} # the active dig/fill window, or {}
 var _tower_part: Node3D = null
 var _mobile_job: Dictionary = {}
+var _mobile_seg := -1
+var _routes: MeshInstance3D = null
 var _mobile_pose := {"slew": 0.0, "luff": 0.0, "extend": 0.0, "out": 0.0, "drop": 2.0}
 var _mobile_target := {"slew": 0.0, "luff": 0.0, "extend": 0.0, "out": 0.0, "top": NAN}
 var _parts: Dictionary = {}
@@ -542,6 +563,7 @@ func follow_schedule(schedule: ConstructionSchedule, day: float, building_parts:
 		_parts = building_parts
 		_plan = make_plan(schedule, building_parts)
 		_plan_schedule = schedule
+		_draw_routes()
 	_following = true
 	_day = day
 	_apply_tower(day)
@@ -551,7 +573,10 @@ func follow_schedule(schedule: ConstructionSchedule, day: float, building_parts:
 
 ## When and where each machine works, from the schedule:
 ## {tower: {on, off, parts: [{name, start, end, kind}]},
-##  mobile: [{start, finish, pos, yaw, parts}], digs: [{start, finish, fill}]}.
+##  mobile: [{start, finish, pos, yaw, parts}] (the spots it sets up at),
+##  mobile_segments: [{kind: stand|park|drive, t0, t1, ...}] (where it is, when),
+##  drives: [{t0, t1, points, length, ok, direct, ...}],
+##  digs: [{start, finish, fill}]}.
 func make_plan(schedule: ConstructionSchedule, building_parts: Dictionary) -> Dictionary:
 	var actions := actions_of(schedule.source_data, building_parts.keys())
 	var struct_on := INF
@@ -599,7 +624,13 @@ func make_plan(schedule: ConstructionSchedule, building_parts: Dictionary) -> Di
 		if b.size != Vector3.ZERO:
 			all_boxes.append(b)
 			var w := schedule.get_part_window(n)
-			standing.append({"box": b, "from": w.end_day if not w.is_empty() else -INF})
+			# A part is there from the end of its window -- or, for one the schedule
+			# removes (cleared trees, a stripped scaffold), until it.
+			var removes: bool = not w.is_empty() and w.anim_type in REMOVES
+			standing.append({"box": b,
+				"from": -INF if removes else (w.end_day if not w.is_empty() else -INF),
+				"begin": w.start_day if not w.is_empty() else -INF,
+				"gone": w.end_day if removes else INF})
 	var wb := robust_box(all_boxes)
 	var work := Vector2(wb.get_center().x, wb.get_center().z)
 
@@ -634,7 +665,9 @@ func make_plan(schedule: ConstructionSchedule, building_parts: Dictionary) -> Di
 			off = maxf(off, t.end)
 		if on < INF:
 			tower = {"on": on - erect_days, "off": off + erect_days, "parts": tower_parts}
-	return {"tower": tower, "mobile": mobile_jobs, "digs": digs}
+	var mobile := _plan_mobile(mobile_jobs, standing, work, tower, mast)
+	return {"tower": tower, "mobile": mobile.stands, "mobile_segments": mobile.segments,
+		"drives": mobile.drives, "digs": digs}
 
 
 ## Dig and fill jobs at the terrain's pits: {id, start, finish, fill, site}.
@@ -723,32 +756,321 @@ func _mobile_job_for(entries: Array, work: Vector2, standing: Array = []) -> Dic
 	away = away.normalized() if away.length() > 0.5 else Vector2(0, 1)
 	var radius := Vector2(box.size.x, box.size.z).length() * 0.5
 	# Clear of everything standing by the day of the lift -- the crane with its
-	# outriggers out needs about 5 m all round. Away from the building first,
-	# then turning round the pieces and stepping out until a spot is free (on
-	# the test project the first guess for the granary was on the boundary wall).
+	# outriggers out needs about 5 m all round -- and with its boom clear of
+	# everything standing too. Away from the building first, then turning round
+	# the pieces and stepping out until a spot is free (on the test project the
+	# first guess for the granary was on the boundary wall). A spot where the
+	# boom clears at its usual height wins; failing that, the one where it needs
+	# to go least higher; failing that the first free one (it will clash).
 	var present: Array = []
 	for s in standing:
-		if s.from <= start:
+		if s.from <= start and start < s.get("gone", INF):
 			present.append(s.box)
+	var obstacles := _boom_obstacles(standing, box, finish)
+	var nears := _boom_nears(entries, obstacles)
+	var roads := _road_map(c, away, radius, work, start - 0.75, standing)
+	# ...and one the crane can get to by road from outside the site.
 	var dir := away
 	var p2 := c + away * (radius + 7.5)
+	var up := INF
 	var found := false
-	for dist in [radius + 7.5, radius + 10.0, radius + 13.0, radius + 17.0]:
+	var good := false # the best so far has a road in
+	for dist in [radius + 7.5, radius + 10.0, radius + 13.0, radius + 17.0, radius + 22.0, radius + 30.0]:
 		for turn in [0.0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.2, -2.2, PI]:
 			var d: Vector2 = away.rotated(turn)
-			if not _blocked(present, c + d * dist, 5.0, _ground_level):
-				dir = d
-				p2 = c + d * dist
+			var spot: Vector2 = c + d * dist
+			if _blocked(present, spot, 5.0, _ground_level):
+				continue
+			var lift := _boom_lift(_mobile_transform(spot, d), entries, obstacles, nears)
+			if not found:
 				found = true
+				dir = d
+				p2 = spot
+				up = lift
+			# A spot the boom does not clear from is no better for having a road.
+			if is_inf(lift) or (good and lift >= up):
+				continue
+			var road: bool = RoutePlanner.reached(roads, spot)
+			if (road and not good) or (road == good and lift < up):
+				good = road
+				dir = d
+				p2 = spot
+				up = lift
+			if good and up == 0.0:
 				break
-		if found:
+		if good and up == 0.0:
 			break
 	var pos := Vector3(p2.x, 0, p2.y)
 	pos.y = ground_at(get_tree(), pos, _ground_level)
 	var tangent := Vector2(dir.y, -dir.x)
 	return {"start": start, "finish": finish, "pos": pos,
 		"yaw": atan2(-tangent.x, -tangent.y), "parts": entries,
-		"aim": Vector3(c.x, box.end.y, c.y)}
+		"aim": Vector3(c.x, box.end.y, c.y),
+		"tip_up": 0.0 if is_inf(up) else up, "boom_ok": not is_inf(up)}
+
+
+## Where a mobile crane can drive on `day`, round the job at `c`: the ground
+## reachable from outside the site (60 m out the way away from the work),
+## round what stands then.
+func _road_map(c: Vector2, away: Vector2, radius: float, work: Vector2, day: float, standing: Array) -> Dictionary:
+	var half := radius + 70.0
+	var area := Rect2(c - Vector2.ONE * half, Vector2.ONE * half * 2.0)
+	var rects: Array = []
+	for s in standing:
+		var b: AABB = s.box
+		if s.begin <= day and day < s.get("gone", INF) and b.end.y >= _ground_level + 0.5:
+			rects.append(Rect2(b.position.x, b.position.z, b.size.x, b.size.z))
+	return RoutePlanner.flood(c + away * (half - 3.0), rects, area)
+
+
+## The crane's transform at a spot (plan position) with its carrier along the
+## tangent of `dir` -- the way _mobile_job_for() turns it.
+func _mobile_transform(spot: Vector2, dir: Vector2) -> Transform3D:
+	var tangent := Vector2(dir.y, -dir.x)
+	var p := Vector3(spot.x, 0, spot.y)
+	p.y = ground_at(get_tree(), p, _ground_level)
+	return Transform3D(Basis(Vector3.UP, atan2(-tangent.x, -tangent.y)), p)
+
+
+## What the boom of a crane working near `box` until `until` can hit: every
+## part started by then and standing above the ground, within the boom's
+## longest reach (plus a margin) of it -- {box, begin}.
+func _boom_obstacles(standing: Array, box: AABB, until: float) -> Array:
+	var c := Vector2(box.get_center().x, box.get_center().z)
+	var reach: float = EquipmentModels.BOOM_MAX + 20.0
+	var out: Array = []
+	for s in standing:
+		var b: AABB = s.box
+		if s.begin > until or b.end.y < _ground_level + 0.5:
+			continue
+		if Vector2(b.get_center().x, b.get_center().z).distance_to(c) - Vector2(b.size.x, b.size.z).length() * 0.5 > reach:
+			continue
+		out.append({"box": b, "begin": s.begin, "gone": s.get("gone", INF)})
+	return out
+
+
+## How much higher than 6 m over each piece the boom tip has to be, from a
+## crane standing at `tf`, for the boom and the hook line to clear what stands
+## when the piece is placed -- the worst over the pieces. INF when it cannot
+## from here (out of reach, or nothing high enough clears).
+func _boom_lift(tf: Transform3D, entries: Array, obstacles: Array, nears: Array = []) -> float:
+	if nears.is_empty():
+		nears = _boom_nears(entries, obstacles)
+	var worst := 0.0
+	for i in entries.size():
+		var e: Dictionary = entries[i]
+		var c: Vector3 = e.box.get_center()
+		var target := Vector3(c.x, e.box.end.y, c.z)
+		var up := INF
+		for k in BOOM_RAISE:
+			if _boom_clear(tf, target, k, nears[i]):
+				up = k
+				break
+		if is_inf(up):
+			return INF
+		worst = maxf(worst, up)
+	return worst
+
+
+## For each piece, the boxes its boom could hit: what has started by the time
+## it is placed and is still there, except what touches the piece itself.
+func _boom_nears(entries: Array, obstacles: Array) -> Array:
+	var out: Array = []
+	for e in entries:
+		var seat: AABB = e.box.grow(0.3)
+		var near: Array = []
+		for o in obstacles:
+			if o.begin <= e.start and e.start < o.gone and not (o.box as AABB).intersects(seat):
+				near.append(o.box)
+		out.append(near)
+	return out
+
+
+## Whether the boom, from its foot to a tip `up` m higher than usual over
+## `target` (the top of the piece, world), and the hook line down from the tip,
+## miss `near` (boxes) and the crane can make the lift at all.
+func _boom_clear(tf: Transform3D, target: Vector3, up: float, near: Array) -> bool:
+	var g := _boom_geometry(tf, target + Vector3(0, up, 0))
+	if sqrt(g.y * g.y + g.z * g.z) > EquipmentModels.BOOM_MAX or atan2(g.z, g.y) > deg_to_rad(80.0):
+		return false
+	var pivot: Vector3 = tf * EquipmentModels.MOBILE_SLEW
+	var dir := Vector2(target.x - pivot.x, target.z - pivot.z)
+	dir = dir.normalized() if dir.length() > 0.01 else Vector2(0, -1)
+	var foot := Vector3(pivot.x - dir.x * EquipmentModels.MOBILE_FOOT.z, pivot.y + EquipmentModels.MOBILE_FOOT.y,
+		pivot.z - dir.y * EquipmentModels.MOBILE_FOOT.z)
+	var tip := Vector3(target.x, target.y + 6.0 + up, target.z)
+	var lo := foot.min(tip) - Vector3.ONE * (BOOM_CLEAR + 0.1)
+	var hi := foot.max(tip) + Vector3.ONE * (BOOM_CLEAR + 0.1)
+	for b in near:
+		var box: AABB = b
+		if box.end.x < lo.x or box.position.x > hi.x or box.end.z < lo.z or box.position.z > hi.z 				or box.end.y < lo.y or box.position.y > hi.y:
+			continue
+		if LiftPlanner.segment_hits(foot, tip, (b as AABB).grow(BOOM_CLEAR)) \
+				or LiftPlanner.segment_hits(target, tip, (b as AABB).grow(0.4)):
+			return false
+	return true
+
+
+# --- The mobile crane's life on site: where it stands, and how it gets there ---
+
+## Turns the jobs (one per lift, in order) into where the crane stands and
+## when it is on the move. Two jobs close in time share a spot when the crane
+## can still reach the second one's pieces from the first (no need to drive at
+## all); otherwise it drives there -- straight if the way is clear, round what
+## is built if not. Jobs further apart than `hold_days` mean it leaves the
+## site and comes back. Returns {stands, segments, drives}; `segments` tile the
+## time the crane is on site (stand: working, park: waiting, drive: moving).
+func _plan_mobile(jobs: Array, standing: Array, work: Vector2, tower: Dictionary, mast: Vector2) -> Dictionary:
+	var stands: Array = []
+	var stay: Array = [] # stay[i]: the crane waits on site from stand i to i + 1
+	for j in jobs:
+		if not stands.is_empty():
+			var cur: Dictionary = stands[stands.size() - 1]
+			var gap: float = (j.start - 0.75) - (cur.finish + 0.75)
+			if gap <= hold_days and _can_serve(cur, j, standing):
+				cur["parts"] = cur.parts + j.parts
+				cur["finish"] = maxf(cur.finish, j.finish)
+				cur["merged"] = int(cur.get("merged", 1)) + 1
+				var box: AABB = cur.parts[0].box
+				for e in cur.parts:
+					box = box.merge(e.box)
+				cur["aim"] = Vector3(box.get_center().x, box.end.y, box.get_center().z)
+				continue
+			stay.append(gap <= hold_days)
+		stands.append(j.duplicate())
+	var segments: Array = []
+	var drives: Array = []
+	for i in stands.size():
+		var s: Dictionary = stands[i]
+		var here := Vector2(s.pos.x, s.pos.z)
+		var arrive: float = s.start - 0.75
+		if i > 0 and stay[i - 1]:
+			var q: Dictionary = stands[i - 1]
+			var d := _drive(Vector2(q.pos.x, q.pos.z), here, arrive, standing, tower, mast, q.yaw, s.yaw)
+			d["t1"] = arrive
+			d["t0"] = maxf(q.finish + 0.75, arrive - d.days)
+			if d.t0 > q.finish + 0.75:
+				segments.append({"kind": "park", "t0": q.finish + 0.75, "t1": d.t0, "pos": q.pos, "yaw": q.yaw})
+			segments.append(d)
+			drives.append(d)
+		else:
+			var d := _drive(_gate(here, work), here, arrive, standing, tower, mast, NAN, s.yaw)
+			d["t1"] = arrive
+			d["t0"] = arrive - d.days
+			segments.append(d)
+			drives.append(d)
+		segments.append({"kind": "stand", "t0": arrive, "t1": s.finish + 0.75, "job": s})
+		if i + 1 >= stands.size() or not stay[i]:
+			var d := _drive(here, _gate(here, work), s.finish + 0.75, standing, tower, mast, s.yaw, NAN)
+			d["t0"] = s.finish + 0.75
+			d["t1"] = d.t0 + d.days
+			segments.append(d)
+			drives.append(d)
+	for k in segments.size():
+		segments[k]["id"] = k
+	for d in drives:
+		if not d.ok:
+			var last: int = d.points.size() - 1
+			push_warning("SiteEquipment: no route for the mobile crane from (%.0f, %.0f) to (%.0f, %.0f) on day %.0f -- it drives straight through." % [d.points[0].x, d.points[0].y, d.points[last].x, d.points[last].y, d.t0])
+	return {"stands": stands, "segments": segments, "drives": drives}
+
+
+## Where the crane leaves the site from `spot`: out, away from the work.
+func _gate(spot: Vector2, work: Vector2) -> Vector2:
+	var away := spot - work
+	away = away.normalized() if away.length() > 0.5 else Vector2(0, 1)
+	return spot + away * ACCESS_RUN
+
+
+## The mobile crane's drive from `a` to `b` (x, z) on `day`: the straight line
+## if it is free, else the shortest route round what stands then. `yaw_a` and
+## `yaw_b` are the crane's yaw at either end (NAN where it is just a point on
+## the road): the road eases into the way the crane stands. Times are set by
+## the caller; `days` is how long it takes.
+func _drive(a: Vector2, b: Vector2, day: float, standing: Array, tower: Dictionary, mast: Vector2, yaw_a: float, yaw_b: float) -> Dictionary:
+	var rects: Array = []
+	for s in standing:
+		var box: AABB = s.box
+		if s.begin <= day and day < s.get("gone", INF) and box.end.y >= _ground_level + 0.5:
+			rects.append(Rect2(box.position.x, box.position.z, box.size.x, box.size.z))
+	if not tower.is_empty() and day >= tower.on and day <= tower.off:
+		rects.append(Rect2(mast - Vector2.ONE * MAST_CLEAR, Vector2.ONE * MAST_CLEAR * 2.0))
+	var r := RoutePlanner.find(a, b, rects, EquipmentModels.MOBILE_LENGTH, EquipmentModels.MOBILE_WIDTH)
+	r["kind"] = "drive"
+	r["days"] = clampf(r.length / DRIVE_MPD, DRIVE_DAYS.x, DRIVE_DAYS.y)
+	var pts: PackedVector2Array = r.points
+	var first := (pts[1] - pts[0]).normalized()
+	var last := (pts[pts.size() - 1] - pts[pts.size() - 2]).normalized()
+	r["start_heading"] = _stand_heading(yaw_a, first)
+	r["end_heading"] = _stand_heading(yaw_b, last)
+	return r
+
+
+## The heading (radians) the crane has standing with `yaw`, facing whichever
+## way along its length agrees with `travel` (it can back in as well as drive
+## in); NAN for no yaw.
+static func _stand_heading(yaw: float, travel: Vector2) -> float:
+	if is_nan(yaw):
+		return NAN
+	var fwd := Vector2(-sin(yaw), -cos(yaw))
+	return fwd.angle() if fwd.dot(travel) >= 0.0 else (-fwd).angle()
+
+
+## Whether the crane, standing at `cur`'s spot, can do `job`'s lifts too: the
+## spot is still clear of what is built by then, and every piece is within the
+## boom's reach. Then it need not move.
+func _can_serve(cur: Dictionary, job: Dictionary, standing: Array) -> bool:
+	var present: Array = []
+	for s in standing:
+		if s.from <= job.start and job.start < s.get("gone", INF):
+			present.append(s.box)
+	if _blocked(present, Vector2(cur.pos.x, cur.pos.z), 5.0, _ground_level):
+		return false
+	var tf := Transform3D(Basis(Vector3.UP, cur.yaw), cur.pos)
+	for e in job.parts:
+		var c: Vector3 = e.box.get_center()
+		if boom_needed(tf, Vector3(c.x, e.box.end.y, c.z)) > EquipmentModels.BOOM_MAX:
+			return false
+	# ...and the boom must clear what stands by then, perhaps held higher.
+	var box: AABB = job.parts[0].box
+	for e in job.parts:
+		box = box.merge(e.box)
+	var up := _boom_lift(tf, job.parts, _boom_obstacles(standing, box, job.finish))
+	if is_inf(up):
+		return false
+	cur["tip_up"] = maxf(cur.get("tip_up", 0.0), up)
+	return true
+
+
+## Orange lines on the ground along every drive of the mobile crane.
+func _draw_routes() -> void:
+	if is_instance_valid(_routes):
+		_routes.get_parent().remove_child(_routes)
+		_routes.free()
+	_routes = null
+	if not show_routes or not is_inside_tree():
+		return
+	var drives: Array = _plan.get("drives", [])
+	if drives.is_empty():
+		return
+	var mesh := ImmediateMesh.new()
+	for d in drives:
+		mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+		for p in d.points:
+			var at := Vector3(p.x, 0, p.y)
+			at.y = ground_at(get_tree(), at, _ground_level) + 0.4
+			mesh.surface_add_vertex(at)
+		mesh.surface_end()
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(1.0, 0.45, 0.05)
+	mat.no_depth_test = true
+	_routes = MeshInstance3D.new()
+	_routes.name = "MobileRoutes"
+	_routes.mesh = mesh
+	_routes.material_override = mat
+	_routes.top_level = true
+	_generated(_routes, self)
 
 
 func _apply_tower(day: float) -> void:
@@ -812,28 +1134,41 @@ func _set_erected(level: float) -> void:
 func _apply_mobile(day: float) -> void:
 	if not _mobile:
 		return
-	var job: Dictionary = {}
-	for j in _plan.get("mobile", []):
-		if day >= j.start - 0.75 and day <= j.finish + 0.75:
-			job = j
+	var seg: Dictionary = {}
+	for sg in _plan.get("mobile_segments", []):
+		if day >= sg.t0 and day <= sg.t1:
+			seg = sg
 			break
-	if job.is_empty():
+	if seg.is_empty():
 		_mobile.visible = false
 		_mobile_job = {}
+		_mobile_seg = -1
 		return
+	if seg.id != _mobile_seg:
+		_mobile_seg = seg.id
+		_mobile_pose = {"slew": 0.0, "luff": 0.0, "extend": 0.0, "out": 0.0, "drop": 2.0}
+	_mobile.visible = true
+	if seg.kind != "stand":
+		_mobile_job = {}
+		_mobile_target.merge({"out": 0.0, "slew": 0.0, "luff": 0.0, "extend": 0.0, "top": NAN}, true)
+		if seg.kind == "park":
+			_mobile.global_transform = Transform3D(Basis(Vector3.UP, seg.yaw), seg.pos)
+		else:
+			_place_on_drive(seg, day)
+		return
+	var job: Dictionary = seg.job
 	if job != _mobile_job:
 		_mobile_job = job
 		_mobile.global_transform = Transform3D(Basis(Vector3.UP, job.yaw), job.pos)
-		_mobile_pose = {"slew": 0.0, "luff": 0.0, "extend": 0.0, "out": 0.0, "drop": 2.0}
-	_mobile.visible = true
 	var out := clampf(minf(day - (job.start - 0.75), (job.finish + 0.75) - day) / 0.5, 0.0, 1.0)
 	_mobile_target.out = out
-	var target: Vector3 = job.aim + Vector3(0, 6.0, 0)
+	var target: Vector3 = job.aim + Vector3(0, 6.0 + job.get("tip_up", 0.0), 0)
 	var top := NAN
 	for e in job.parts:
 		if day >= e.start and day < e.end and _parts.has(e.name):
 			target = _part_top(_parts[e.name])
 			top = target.y
+			target.y += job.get("tip_up", 0.0)
 			break
 	if out < 1.0:
 		_mobile_target.merge({"slew": 0.0, "luff": 0.0, "extend": 0.0, "top": NAN}, true)
@@ -842,16 +1177,42 @@ func _apply_mobile(day: float) -> void:
 		_mobile_target.top = top
 
 
+## The crane on the road: where it is `day` along its drive, facing the way
+## it is going.
+func _place_on_drive(drive: Dictionary, day: float) -> void:
+	var u := clampf((day - drive.t0) / maxf(drive.t1 - drive.t0, 0.0001), 0.0, 1.0)
+	var at := RoutePlanner.sample(drive.points, u * drive.length, drive.start_heading, drive.end_heading)
+	var d := Vector2.from_angle(at.heading)
+	var p := Vector3(at.pos.x, 0, at.pos.y)
+	p.y = ground_at(get_tree(), p, _ground_level)
+	_mobile.global_transform = Transform3D(Basis(Vector3.UP, atan2(-d.x, -d.y)), p)
+
+
 ## Slew, luff and telescope that put the mobile crane's boom tip 6 m above
 ## `target` (world), as far as its 13--42 m boom allows.
-static func aim_mobile(crane_tf: Transform3D, target: Vector3) -> Dictionary:
+## The boom length that puts its tip 6 m above `target` (world); more than
+## EquipmentModels.BOOM_MAX means the crane cannot make that lift from where
+## it stands.
+static func boom_needed(crane_tf: Transform3D, target: Vector3) -> float:
+	var g := _boom_geometry(crane_tf, target)
+	return sqrt(g.y * g.y + g.z * g.z)
+
+
+## (slew angle, horizontal reach from the boom foot, height of the tip above it).
+static func _boom_geometry(crane_tf: Transform3D, target: Vector3) -> Vector3:
 	var p := crane_tf.affine_inverse() * target
 	var s := EquipmentModels.MOBILE_SLEW
 	var dx := p.x - s.x
 	var dz := p.z - s.z
-	var slew := atan2(-dx, -dz)
-	var r := sqrt(dx * dx + dz * dz) + EquipmentModels.MOBILE_FOOT.z
-	var h := p.y + 6.0 - (s.y + EquipmentModels.MOBILE_FOOT.y)
+	return Vector3(atan2(-dx, -dz), sqrt(dx * dx + dz * dz) + EquipmentModels.MOBILE_FOOT.z,
+		p.y + 6.0 - (s.y + EquipmentModels.MOBILE_FOOT.y))
+
+
+static func aim_mobile(crane_tf: Transform3D, target: Vector3) -> Dictionary:
+	var g := _boom_geometry(crane_tf, target)
+	var slew := g.x
+	var r := g.y
+	var h := g.z
 	var need := sqrt(r * r + h * h)
 	var length := clampf(need, EquipmentModels.BOOM_MIN, EquipmentModels.BOOM_MAX)
 	var luff := atan2(h, r) if length == need else acos(clampf(r / length, 0.0, 1.0))
@@ -1011,6 +1372,7 @@ func _show_rest() -> void:
 		_set_erected(1.0)
 	if _mobile:
 		_mobile.visible = false
+		_mobile_seg = -1
 	for crew in _crews:
 		crew.rig.visible = false
 		crew.dig = {}

@@ -2,6 +2,7 @@
 
 > **Status: built** (2026-10-10). Item 2 of `12_FUTURE_WORK.md`. Code: `equipment/equipment_models.gd`
 > (`EquipmentModels`), `equipment/site_equipment.gd` (`SiteEquipment`); hooks in
+> `equipment/route_planner.gd` (`RoutePlanner`, the mobile crane's drives),
 > `runtime/sequence_manager.gd`, `runtime/timeline_controller.gd`, `editor/timeline_dock.gd`,
 > `core/construction_schedule.gd`, `terrain/construction_terrain.gd`. Tests:
 > `tests/test_equipment.gd` (92 checks). Measurements: `equipment/specs/` (`EquipmentSpecs`).
@@ -137,7 +138,7 @@ and the two marker nodes below.
 | Machine | On site | Doing |
 |---|---|---|
 | Tower crane | from the first structural activity (concrete, rebar, steel/timber frame, precast, stone pieces, masonry) − `erect_days`, to the end of the last roofing activity (or the last structural one) + `erect_days` | Erecting: mast sections appear bottom-up over the first 75 % of `erect_days`, then jib, counter-jib and cab. Following: the most recently started `drop_in` piece it is assigned, via `Crane.swing()` (1.2 s slew, then the hook tracks the piece down). `install` units stay `TimelineController`'s; a piece being installed is never interrupted. Idle: `Crane.retract()`. |
-| Mobile crane | each job's first piece − 0.75 day to its last piece + 0.75 day | Outriggers out over the first half day, boom up; boom tip 6 m over the current piece, hook down to it; stowed again before it leaves |
+| Mobile crane | each job's first piece − 0.75 day to its last piece + 0.75 day, plus the drives to and from it (next section) | Outriggers out over the first half day, boom up; boom tip 6 m over the current piece, hook down to it; stowed again before it leaves |
 | Excavator + truck | every excavation and earth-fill activity | Excavation: an 11 s dig cycle (reach, teeth in, drag and curl, lift, slew 90° over the truck, dump); the truck's round is six cycles — reverse in from 40 m, four loads, drive off. With no truck at the spot the bucket is emptied onto a spoil heap on the other side. Earth fill: the truck arrives full and tips at the spot. |
 
 **Which lifts need a crane.** Every `install` part, and `drop_in` parts of any category except
@@ -145,6 +146,129 @@ light ones placed by hand or with a telehandler: ironwork and gates, lighting, l
 openings, finishes, services, curtain wall. A lift goes to the tower crane when its piece is within
 the jib − 1 m and it starts no later than 7 days after the roof is done; otherwise to the mobile
 crane, one job per activity.
+
+## Driving between jobs
+
+*Added after 0.7.2.* The mobile crane used to appear at each job's spot and vanish afterwards. It
+now drives, and a drive is planned, not reported: where the straight line would go through
+something, the crane takes the shortest way that does not (`_plan_mobile()`, `_drive()`,
+`equipment/route_planner.gd`).
+
+**Is the move needed at all?** Two consecutive jobs are one spot (one stand, one outrigger
+set-up, one continuous stay) when
+
+1. they are no more than `hold_days` apart (default 30, an export on `SiteEquipment`) --
+   a crane that is not needed for longer is hired out, so it leaves by the road it came and
+   comes back for the next job; and
+2. from where it stands it can still make the next job: the spot is still 5 m clear of everything
+   built by then, and the boom (13.0–41.8 m, tip 6 m over the piece) reaches every piece
+   (`boom_needed()` against `BOOM_MAX`).
+
+If either fails it moves. A job's `parts` and `finish` then simply grow to cover both.
+
+**When it moves** it drives from the spot it is at to the next (or, arriving and leaving, from and
+to a point `ACCESS_RUN` = 40 m out on the side away from the work), taking `length / DRIVE_MPD`
+days of schedule (150 m/day, between 0.15 and 0.6 day), arriving just in time for the outriggers: it
+waits parked where it was until then (`park` segment) rather than standing early in the way of the
+next job. Obstacles are the rest boxes of every part **whose work has started by then** (a wall
+half built is a wall), taller than 0.5 m above ground, plus a 3 m square round the tower crane's
+mast while that is up. Not obstacles: ground-level layers, anything not yet started, the machines
+other than the mast.
+
+**How the route is found** (`RoutePlanner.find()`):
+
+1. **Straight line first.** The carrier's body (11.6 × 2.55 m plus 0.6 m each side) swept along
+   the line against every obstacle. Free: that is the route, no search.
+2. **Otherwise the shortest way round**: a visibility graph over the corners of the obstacles,
+   each grown by half the width plus a margin, searched with A\*. Obstacles that contain the
+   start or end are grown only as far as keeps it outside (the crane stands where it stands).
+3. **Checked with the real body.** A point fits anywhere; an 11.6 m carrier swings at corners. The
+   route is verified leg by leg (the swept rectangle, the ends beyond a corner included) and at
+   every corner (the body turned through six headings). If it fails, the search repeats with more
+   room -- margins 0.6, 1.5, 3, 5, 8 m, nearest-and-shortest first -- and the first that passes
+   wins. Obstacles beyond 40 m of the start-goal box are ignored, then 120 m.
+4. **No route** (a closed wall, a goal inside a building): `ok = false`, the plan carries the
+   straight line so the crane still moves, and a warning says which drive on which day.
+
+While playing, the crane is placed along the route by the day (`RoutePlanner.sample()`), facing
+the way it goes with the heading turning smoothly round corners and easing into the way it stands
+at each end (it may back in). Boom stowed and outriggers in. A scrub lands it in the right place at
+once, like the rest of the site. The switch **Show Routes** on `SiteEquipment` draws every
+planned drive as an orange line on the ground.
+
+The plan holds it: `plan.mobile_segments` (`stand`, `park`, `drive`, tiling the time on site) and
+`plan.drives` (`t0`, `t1`, `points`, `length`, `ok`, `direct`, `margin`).
+
+**Measured on the test project** (Galician pazo, hold 30 days): three jobs, five drives -- in and
+out for the first two, and *Hórreo* → *Cruceiro* (three weeks apart, the crane waits in between),
+taking an 83 m way round (54 m straight, through what stands there). The first two jobs are further apart than the 30-day limit, so the crane leaves and
+returns for them; with `hold_days` raised it would drive between them the same way.
+
+## Booms and lifts that clear what is built
+
+*Added after 0.7.2, with the drives above.* The same rule -- plan a way that clears, don't report
+the clash -- for the boom and for crane lifts.
+
+**The mobile crane's boom** (`_boom_lift()`, `_boom_clear()`). The boom is a line from its foot to
+the tip, which is 6 m over the piece, 0.8 m of clearance either side, and a hook line straight
+down from the tip to the piece. For each of a job's pieces it must clear every part that had
+started by the time the piece goes in and is still there (a part the schedule removes -- cleared
+trees, a stripped scaffold -- stops counting when it goes), except what touches the piece (the
+wall it sits on). Looking for a spot, in the order the crane always tried them (away from the
+building first, then turning round the pieces, then stepping out up to `radius + 30` m):
+
+1. a spot with a road in (below) where the boom clears **at its usual height** wins, so a crane is
+   moved before its boom is raised;
+2. failing that, the spot where the tip needs to go **least higher** (`BOOM_RAISE`: +3, 6, 10, 15,
+   22 m, kept within the 41.8 m boom and 80° luff) -- the job's `tip_up`, applied to every piece
+   and to the idle aim;
+3. failing that, the first free spot, `boom_ok = false` in the job, and it will clash.
+
+A stand shared by two jobs (merged, above) needs the boom clear for the new pieces as well.
+
+**A road in.** A spot is no use if the crane cannot get there: `_road_map()` floods the ground
+reachable from 60 m out, round what stands then (2 m grid, parts grown by 2.5 m; `RoutePlanner.flood()`),
+and a spot off it comes second to one on it. On the test project the *Hórreo* crane moved from
+(25.0, 26.9) to (17.5, 25.8): at the first spot the boom could not clear a tree-clearing part
+that the plan still counted as standing after its `fade_out` (next paragraph), and once that was
+fixed the spot the boom liked was inside the boundary wall with no road in.
+
+**Removed parts.** The standing list now says when a part is *gone*: `fade_out` and `sink_down`
+hide a part at the end of its window, and it used to count as present from that moment. Spots,
+drives and booms all use it.
+
+**`install` lifts** (`core/lift_planner.gd`, `LiftPlanner`; `ConstructionSchedule._plan_lifts()`).
+The default lift is up 5 m, across at that height, down. Per unit (a commander and its parts, or a
+lone part), once when the schedule is built:
+
+1. the default path is checked against every part that had started by the time the piece is placed
+   and is not removed, other than what touches the piece at its place or at its laydown -- as
+   boxes, the piece (the unit's box) swept as a point among the obstacles grown by its size;
+2. **free: nothing changes** -- no `install_path` meta, the same animation as ever;
+3. otherwise candidates are tried **shortest first**: up to a height that clears something (just
+   over the top of each obstacle in the way) then across then straight down (`raised`), or the same
+   height then to a point beside the place (8 directions, 2--24 m) and in **sideways at the level of
+   its place** (`side`) -- the way in when a floor or roof is over the place. The first free one
+   is stored on every part of the unit as `install_path` (local positions), and
+   `AnimationApplier._install_instant()` follows it, easing along its whole length;
+4. a tower crane's limits apply: the piece stays under the jib (`y_max`), within the hook's reach
+   (`r_max` = the farthest of laydown and place + 1.5 m) and not in against the mast (`r_min`
+   3 m). The crane tracks the piece as before, so it follows whatever path is stored;
+5. **no path** (the place is shut in on every side): the default is kept, the plan says
+   `ok = false`, one warning says how many lifts and the first, and the clash scan reports the
+   clash as before.
+
+`ConstructionSchedule.lift_plans` (commander name → `{ok, direct, mode, length}`) says what was
+decided; `ConstructionSchedule.plan_lifts_enabled = false` turns planning off (the tests use it to
+see the default path's clash).
+
+Plain `target_prefix` install actions have no crane and no unit; their parts are planned the same
+way from the usual pickup 15 m to the side.
+
+**Cost**: the mobile crane's plan on the test project (663 parts, three jobs, 22 + 15 + 5 pieces)
+140 ms. Installing every `drop_in` of the pazo (204 lifts among 663 parts) takes about 4 s, most of
+it spent on the 74 lifts with no path (every candidate tried); one install action of a dozen
+precast pieces is a few tens of milliseconds.
 
 **Real time, not schedule time.** The dig cycle and truck round run in seconds of playback, and
 only while the timeline is moving (the day changed since the last frame): a paused or scrubbed
@@ -197,9 +321,18 @@ earlier in the tree).
 
 ## Known gaps
 
-- **Crane geometry is still not clash-checked** — a jib sweeping through a finished element is
-  invisible to the clash system (`12_FUTURE_WORK.md`, section 3). The `install` path is still up,
-  across and down; only its start moved to the laydown area.
+- **Drives, the mobile crane's boom and `install` lifts are planned round what is built; the
+  tower crane's jib is not checked** (it is 10 m over the tallest part in reach by construction)
+  and neither is the `drop_in` fall, which is straight down over the place.
+- **Obstacles are boxes.** A pitched roof or a deck counts as solid over its whole footprint, so
+  a lift under or beside one may find no path where the exact clash scan would find none either
+  way -- the lift then keeps the default and the scan reports it. The boom is a line 1.6 m wide,
+  not the carrier, superstructure and counterweight swinging.
+- **Drives are planned in plan view only**: no slopes, no pits (an open excavation is not an
+  obstacle), no turning circle -- the body is swept straight along each leg and swung at the
+  corners, but the path itself is polylines. The excavator, the truck and the tower crane's
+  laydown are not obstacles either, and neither are the crane's own outriggers (the spot is 5 m
+  clear already).
 - **Tower crane follows `drop_in` pieces from wherever they appear**, just above their place; it
   doesn't fetch them from the laydown first (that is what `install` does).
 - **One mobile crane; one excavator crew for the model's own pit.** Overlapping mobile jobs: the
@@ -212,7 +345,12 @@ earlier in the tree).
 
 ## Tests
 
-`tests/test_equipment.gd`, 92 checks on a box fixture (a 20 × 10 m building with its dig, footings,
+`tests/test_route_planner.gd` (27 checks: the straight line, the way round, the shorter of two
+ways, a gap too narrow for the body, a closed yard, which ground is reachable, sampling),
+`tests/test_lift_planner.gd` (23: the default untouched, over a wall, round a post, in from the
+side under a floor, a bearing is not in the way, shut in, a crane's limits, sampling),
+`tests/test_collisions.gd` (21: the post that clashed on the default path is now cleared) and
+`tests/test_equipment.gd`, 125 checks on a box fixture (a 20 × 10 m building with its dig, footings,
 walls, a cornice, a roof, a cross 90 m away, a granary placed after the roof, street lights and a
 boundary wall 40 m out): node names and triangle budgets; dimensions; the excavator against the
 Cat 320 sheet (track length and width, ground and counterweight clearance, tail swing, cab top,

@@ -43,6 +43,9 @@ const BOOM_MAX := BOOM_MIN + BOOM_SLIDE * BOOM_SECTIONS
 ## where the boom foot sits on the superstructure.
 const MOBILE_SLEW := Vector3(0.0, 1.95, 1.6)
 const MOBILE_FOOT := Vector3(0.3, 1.2, 1.8)
+## The carrier's footprint, for planning its drives (the box in mobile_crane()).
+const MOBILE_LENGTH := 11.6
+const MOBILE_WIDTH := 2.55
 
 ## Excavator geometry, in metres. Dimensions from Caterpillar's 320 sheet
 ## (equipment/specs/excavator_cat_320.json, checked against it by the test);

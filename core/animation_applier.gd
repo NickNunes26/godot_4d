@@ -835,6 +835,11 @@ static func _install_instant(part: Node3D, progress: float) -> void:
 		part.position = orig_pos
 		return
 
+	# A path planned round what stands there (ConstructionSchedule._plan_lifts()).
+	if part.has_meta("install_path"):
+		part.position = LiftPlanner.sample(part.get_meta("install_path"), progress)
+		return
+
 	if progress < 0.3:
 		# Phase 1 (0-0.3): lift straight up to hover height.
 		var t = progress / 0.3
