@@ -1,0 +1,435 @@
+{
+	"excluded_prefixes": [],
+	"static_prefixes": [
+		"Z00_Terreo"
+	],
+	"steps": [
+		{
+			"actions": [
+				{
+					"batch": true,
+					"comment": "Desbroce e retirada de arboredo -- 22 part(s), 2027-03-01..2027-03-11",
+					"duration_days": 11,
+					"id": "C01_Desbroce",
+					"start_date": "2027-03-01",
+					"target_prefix": "C01_Desbroce",
+					"type": "fade_out"
+				},
+				{
+					"batch": true,
+					"comment": "Retirada de terra vexetal -- 12 part(s), 2027-03-11..2027-03-19",
+					"duration_days": 9,
+					"id": "C02_TerraVexetal",
+					"start_date": "2027-03-11",
+					"target_prefix": "C02_TerraVexetal",
+					"type": "scale_up"
+				},
+				{
+					"batch": true,
+					"comment": "Escavación ata cota de cimentación -- 12 part(s), 2027-03-19..2027-04-02",
+					"duration_days": 15,
+					"id": "C03_Escavacion",
+					"start_date": "2027-03-19",
+					"target_prefix": "C03_Escavacion",
+					"type": "scale_up"
+				},
+				{
+					"batch": true,
+					"comment": "Formigón de limpeza -- 6 part(s), 2027-04-04..2027-04-09",
+					"duration_days": 6,
+					"id": "C04_Limpeza",
+					"start_date": "2027-04-04",
+					"target_prefix": "C04_Limpeza",
+					"type": "fade_out"
+				},
+				{
+					"batch": true,
+					"comment": "Armado de zapatas -- 12 part(s), 2027-04-09..2027-04-19",
+					"duration_days": 11,
+					"id": "C05_Armaduras",
+					"start_date": "2027-04-09",
+					"target_prefix": "C05_Armaduras",
+					"type": "scale_up"
+				},
+				{
+					"batch": true,
+					"comment": "Zapatas de formigón armado -- 12 part(s), 2027-04-19..2027-05-03",
+					"duration_days": 15,
+					"id": "C06_Zapatas",
+					"start_date": "2027-04-19",
+					"target_prefix": "C06_Zapatas",
+					"type": "fill_up"
+				},
+				{
+					"batch": true,
+					"comment": "Vigas riostras -- 14 part(s), 2027-05-05..2027-05-17",
+					"duration_days": 13,
+					"id": "C07_Riostras",
+					"start_date": "2027-05-05",
+					"target_prefix": "C07_Riostras",
+					"type": "fill_up"
+				},
+				{
+					"batch": true,
+					"comment": "Zócalo de mampostería granítica -- 12 part(s), 2027-05-20..2027-06-03",
+					"duration_days": 15,
+					"id": "C08_Zocalo",
+					"start_date": "2027-05-20",
+					"target_prefix": "C08_Zocalo",
+					"type": "rise_up"
+				},
+				{
+					"batch": true,
+					"comment": "Soleira e forxado sanitario -- 6 part(s), 2027-06-03..2027-06-11",
+					"duration_days": 9,
+					"id": "C09_Soleira",
+					"start_date": "2027-06-03",
+					"target_prefix": "C09_Soleira",
+					"type": "fill_up"
+				},
+				{
+					"batch": true,
+					"comment": "Piares de planta baixa -- 12 part(s), 2027-06-14..2027-06-26",
+					"duration_days": 13,
+					"id": "C10_PilaresPB",
+					"start_date": "2027-06-14",
+					"target_prefix": "C10_PilaresPB",
+					"type": "fill_up"
+				},
+				{
+					"batch": true,
+					"comment": "Forxado de planta primeira -- 8 part(s), 2027-06-27..2027-07-11",
+					"duration_days": 15,
+					"id": "C11_ForxadoP1",
+					"start_date": "2027-06-27",
+					"target_prefix": "C11_ForxadoP1",
+					"type": "fill_up"
+				},
+				{
+					"batch": true,
+					"comment": "Piares de planta primeira -- 12 part(s), 2027-07-13..2027-07-25",
+					"duration_days": 13,
+					"id": "C12_PilaresP1",
+					"start_date": "2027-07-13",
+					"target_prefix": "C12_PilaresP1",
+					"type": "rise_up"
+				},
+				{
+					"batch": true,
+					"comment": "Mampostería de granito, planta baixa -- 12 part(s), 2027-07-14..2027-08-05",
+					"duration_days": 23,
+					"id": "C16_MamposteriaPB",
+					"start_date": "2027-07-14",
+					"target_prefix": "C16_MamposteriaPB",
+					"type": "rise_up"
+				},
+				{
+					"batch": false,
+					"comment": "Esquinais de sillería, planta baixa -- 12 part(s), 2027-07-18..2027-08-01",
+					"duration_days": 15,
+					"id": "C17_EsquinaisPB",
+					"start_date": "2027-07-18",
+					"target_prefix": "C17_EsquinaisPB",
+					"type": "drop_in"
+				},
+				{
+					"batch": true,
+					"comment": "Forxado de planta segunda -- 8 part(s), 2027-07-26..2027-08-09",
+					"duration_days": 15,
+					"id": "C13_ForxadoP2",
+					"start_date": "2027-07-26",
+					"target_prefix": "C13_ForxadoP2",
+					"type": "fill_up"
+				},
+				{
+					"batch": false,
+					"comment": "Recercados e cantería de fachada -- 31 part(s), 2027-08-02..2027-11-06",
+					"duration_days": 97,
+					"id": "C23_Recercados",
+					"start_date": "2027-08-02",
+					"target_prefix": "C23_Recercados",
+					"type": "drop_in"
+				},
+				{
+					"batch": true,
+					"comment": "Andamio de fachada -- 30 part(s), 2027-08-02..2027-11-06",
+					"duration_days": 97,
+					"id": "Z99_Andamio",
+					"start_date": "2027-08-02",
+					"target_prefix": "Z99_Andamio",
+					"type": "fill_up"
+				},
+				{
+					"batch": false,
+					"comment": "Cornixa de planta primeira -- 4 part(s), 2027-08-07..2027-08-13",
+					"duration_days": 7,
+					"id": "C24_CornixaP1",
+					"start_date": "2027-08-07",
+					"target_prefix": "C24_CornixaP1",
+					"type": "drop_in"
+				},
+				{
+					"batch": true,
+					"comment": "Piares de planta segunda -- 12 part(s), 2027-08-11..2027-08-23",
+					"duration_days": 13,
+					"id": "C14_PilaresP2",
+					"start_date": "2027-08-11",
+					"target_prefix": "C14_PilaresP2",
+					"type": "fill_up"
+				},
+				{
+					"batch": true,
+					"comment": "Mampostería de granito, planta primeira -- 12 part(s), 2027-08-11..2027-09-02",
+					"duration_days": 23,
+					"id": "C18_MamposteriaP1",
+					"start_date": "2027-08-11",
+					"target_prefix": "C18_MamposteriaP1",
+					"type": "rise_up"
+				},
+				{
+					"batch": false,
+					"comment": "Esquinais de sillería, planta primeira -- 12 part(s), 2027-08-15..2027-08-29",
+					"duration_days": 15,
+					"id": "C19_EsquinaisP1",
+					"start_date": "2027-08-15",
+					"target_prefix": "C19_EsquinaisP1",
+					"type": "drop_in"
+				},
+				{
+					"batch": true,
+					"comment": "Forxado de cuberta e zuncho -- 8 part(s), 2027-08-24..2027-09-07",
+					"duration_days": 15,
+					"id": "C15_ForxadoCuberta",
+					"start_date": "2027-08-24",
+					"target_prefix": "C15_ForxadoCuberta",
+					"type": "fill_up"
+				},
+				{
+					"batch": false,
+					"comment": "Ménsulas de granito da galería -- 7 part(s), 2027-09-04..2027-09-10",
+					"duration_days": 7,
+					"id": "C22_MensulasGaleria",
+					"start_date": "2027-09-04",
+					"target_prefix": "C22_MensulasGaleria",
+					"type": "drop_in"
+				},
+				{
+					"batch": false,
+					"comment": "Cornixa de planta segunda -- 4 part(s), 2027-09-04..2027-09-10",
+					"duration_days": 7,
+					"id": "C25_CornixaP2",
+					"start_date": "2027-09-04",
+					"target_prefix": "C25_CornixaP2",
+					"type": "drop_in"
+				},
+				{
+					"batch": true,
+					"comment": "Mampostería de granito, planta segunda -- 12 part(s), 2027-09-09..2027-10-01",
+					"duration_days": 23,
+					"id": "C20_MamposteriaP2",
+					"start_date": "2027-09-09",
+					"target_prefix": "C20_MamposteriaP2",
+					"type": "rise_up"
+				},
+				{
+					"batch": false,
+					"comment": "Esquinais de sillería, planta segunda -- 12 part(s), 2027-09-13..2027-09-27",
+					"duration_days": 15,
+					"id": "C21_EsquinaisP2",
+					"start_date": "2027-09-13",
+					"target_prefix": "C21_EsquinaisP2",
+					"type": "drop_in"
+				},
+				{
+					"batch": false,
+					"comment": "Cornixa de alero -- 4 part(s), 2027-10-03..2027-10-11",
+					"duration_days": 9,
+					"id": "C26_CornixaAlero",
+					"start_date": "2027-10-03",
+					"target_prefix": "C26_CornixaAlero",
+					"type": "drop_in"
+				},
+				{
+					"batch": false,
+					"comment": "Estrutura de cuberta en castiñeiro -- 9 part(s), 2027-10-04..2027-10-14",
+					"duration_days": 11,
+					"id": "C27_EstruturaCuberta",
+					"start_date": "2027-10-04",
+					"target_prefix": "C27_EstruturaCuberta",
+					"type": "drop_in"
+				},
+				{
+					"batch": false,
+					"comment": "Solaina -- 9 part(s), 2027-10-06..2027-10-20",
+					"duration_days": 15,
+					"id": "C37_Solaina",
+					"start_date": "2027-10-06",
+					"target_prefix": "C37_Solaina",
+					"type": "drop_in"
+				},
+				{
+					"batch": true,
+					"comment": "Carpintería exterior e portas -- 33 part(s), 2027-10-13..2027-11-02",
+					"duration_days": 21,
+					"id": "C33_CarpinteriaExterior",
+					"start_date": "2027-10-13",
+					"target_prefix": "C33_CarpinteriaExterior",
+					"type": "scale_up"
+				},
+				{
+					"batch": false,
+					"comment": "Pares e cabrios -- 14 part(s), 2027-10-14..2027-10-22",
+					"duration_days": 9,
+					"id": "C28_Pares",
+					"start_date": "2027-10-14",
+					"target_prefix": "C28_Pares",
+					"type": "drop_in"
+				},
+				{
+					"batch": true,
+					"comment": "Carpintería da galería -- 30 part(s), 2027-10-14..2027-11-01",
+					"duration_days": 19,
+					"id": "C32_CarpinteriaGaleria",
+					"start_date": "2027-10-14",
+					"target_prefix": "C32_CarpinteriaGaleria",
+					"type": "scale_up"
+				},
+				{
+					"batch": false,
+					"comment": "Balcóns e forxa -- 36 part(s), 2027-10-14..2027-10-26",
+					"duration_days": 13,
+					"id": "C36_Balcons",
+					"start_date": "2027-10-14",
+					"target_prefix": "C36_Balcons",
+					"type": "drop_in"
+				},
+				{
+					"batch": false,
+					"comment": "Escudo heráldico -- 2 part(s), 2027-10-16..2027-10-19",
+					"duration_days": 4,
+					"id": "C35_Escudo",
+					"start_date": "2027-10-16",
+					"target_prefix": "C35_Escudo",
+					"type": "drop_in"
+				},
+				{
+					"batch": true,
+					"comment": "Cubrición de lousa -- 10 part(s), 2027-10-23..2027-11-08",
+					"duration_days": 17,
+					"id": "C29_Lousa",
+					"start_date": "2027-10-23",
+					"target_prefix": "C29_Lousa",
+					"type": "fade_in"
+				},
+				{
+					"batch": true,
+					"comment": "Chemineas de granito -- 6 part(s), 2027-10-24..2027-11-03",
+					"duration_days": 11,
+					"id": "C31_Chemineas",
+					"start_date": "2027-10-24",
+					"target_prefix": "C31_Chemineas",
+					"type": "rise_up"
+				},
+				{
+					"batch": true,
+					"comment": "Bufardas -- 12 part(s), 2027-11-02..2027-11-10",
+					"duration_days": 9,
+					"id": "C30_Bufardas",
+					"start_date": "2027-11-02",
+					"target_prefix": "C30_Bufardas",
+					"type": "scale_up"
+				},
+				{
+					"batch": true,
+					"comment": "Patín de acceso -- 10 part(s), 2027-11-02..2027-11-12",
+					"duration_days": 11,
+					"id": "C38_Patin",
+					"start_date": "2027-11-02",
+					"target_prefix": "C38_Patin",
+					"type": "rise_up"
+				},
+				{
+					"batch": true,
+					"comment": "Acristalamento -- 46 part(s), 2027-11-04..2027-11-18",
+					"duration_days": 15,
+					"id": "C34_Acristalamento",
+					"start_date": "2027-11-04",
+					"target_prefix": "C34_Acristalamento",
+					"type": "fade_in"
+				},
+				{
+					"batch": true,
+					"comment": "Terraza e lousado exterior -- 8 part(s), 2027-11-12..2027-11-22",
+					"duration_days": 11,
+					"id": "C39_Terraza",
+					"start_date": "2027-11-12",
+					"target_prefix": "C39_Terraza",
+					"type": "fade_in"
+				},
+				{
+					"batch": false,
+					"comment": "Emparrado -- 15 part(s), 2027-11-22..2027-11-30",
+					"duration_days": 9,
+					"id": "C40_Emparrado",
+					"start_date": "2027-11-22",
+					"target_prefix": "C40_Emparrado",
+					"type": "drop_in"
+				},
+				{
+					"batch": true,
+					"comment": "Muro de cerre da parcela -- 32 part(s), 2027-12-20..2028-01-14",
+					"duration_days": 26,
+					"id": "C41_Cerre",
+					"start_date": "2027-12-20",
+					"target_prefix": "C41_Cerre",
+					"type": "rise_up"
+				},
+				{
+					"batch": false,
+					"comment": "Cancela e piares de entrada -- 6 part(s), 2028-01-14..2028-01-20",
+					"duration_days": 7,
+					"id": "C42_Cancela",
+					"start_date": "2028-01-14",
+					"target_prefix": "C42_Cancela",
+					"type": "drop_in"
+				},
+				{
+					"batch": false,
+					"comment": "Hórreo -- 22 part(s), 2028-01-18..2028-02-01",
+					"duration_days": 15,
+					"id": "C43_Horreo",
+					"start_date": "2028-01-18",
+					"target_prefix": "C43_Horreo",
+					"type": "drop_in"
+				},
+				{
+					"batch": true,
+					"comment": "Alumeado exterior -- 8 part(s), 2028-01-22..2028-01-30",
+					"duration_days": 9,
+					"id": "C46_Alumeado",
+					"start_date": "2028-01-22",
+					"target_prefix": "C46_Alumeado",
+					"type": "scale_up"
+				},
+				{
+					"batch": true,
+					"comment": "Xardinería -- 26 part(s), 2028-02-03..2028-02-23",
+					"duration_days": 21,
+					"id": "C45_Xardineria",
+					"start_date": "2028-02-03",
+					"target_prefix": "C45_Xardineria",
+					"type": "scale_up"
+				},
+				{
+					"batch": false,
+					"comment": "Cruceiro -- 5 part(s), 2028-02-25..2028-02-29",
+					"duration_days": 5,
+					"id": "C44_Cruceiro",
+					"start_date": "2028-02-25",
+					"target_prefix": "C44_Cruceiro",
+					"type": "drop_in"
+				}
+			]
+		}
+	]
+}
