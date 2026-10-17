@@ -149,7 +149,7 @@ crane, one job per activity.
 
 ## Driving between jobs
 
-*Added after 0.7.2.* The mobile crane used to appear at each job's spot and vanish afterwards. It
+*Added in 0.7.3.* The mobile crane used to appear at each job's spot and vanish afterwards. It
 now drives, and a drive is planned, not reported: where the straight line would go through
 something, the crane takes the shortest way that does not (`_plan_mobile()`, `_drive()`,
 `equipment/route_planner.gd`).
@@ -206,7 +206,7 @@ returns for them; with `hold_days` raised it would drive between them the same w
 
 ## Booms and lifts that clear what is built
 
-*Added after 0.7.2, with the drives above.* The same rule -- plan a way that clears, don't report
+*Added in 0.7.3, with the drives above.* The same rule -- plan a way that clears, don't report
 the clash -- for the boom and for crane lifts.
 
 **The mobile crane's boom** (`_boom_lift()`, `_boom_clear()`). The boom is a line from its foot to

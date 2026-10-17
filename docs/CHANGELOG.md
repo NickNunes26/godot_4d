@@ -3,7 +3,7 @@
 Notable changes per release. The design reasoning behind each subsystem lives in the numbered
 docs in this folder; `README.md` is the as-built reference.
 
-## Unreleased
+## 0.7.3
 
 **The mobile crane drives round what is built.** Between two jobs it first asks whether it has to
 move at all -- the next piece may be within its boom from where it stands -- and if it does, it
